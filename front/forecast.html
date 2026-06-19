@@ -586,6 +586,7 @@
               <div style="display:flex;align-items:center;gap:10px;">
                 <input type="text" id="produtosSearch" class="form-control" style="max-width:280px;height:36px;padding:8px 14px;" placeholder="Buscar por código, descrição, família..." oninput="onProdutosSearch()" />
                 <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;" onclick="showModal('importProdutosModal')"><i data-lucide="upload"></i> Importar CSV</button>
+                <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;" onclick="exportProdutosCSV()"><i data-lucide="download"></i> Exportar CSV</button>
                 <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick="openProdutoModal('create')"><i data-lucide="plus"></i> Novo Produto</button>
               </div>
             </div>
@@ -1414,6 +1415,23 @@
         p.curva_abc_est, p.curva_abc_vendas, p.numero
       ].map(v => (v === null || v === undefined) ? '' : String(v).toLowerCase()).join(' | ');
       return hay.includes(q);
+    }
+
+    function exportProdutosCSV() {
+      const data = produtosFiltered.length ? produtosFiltered : produtosAll;
+      if (!data.length) { showToast('Nenhum produto para exportar.', 'error'); return; }
+      const cols = ['id_item','descricao','tipo_mercado','familia_totvs','familia_comercial','familia_plan_i','familia_plan_ii','curva_abc_est','curva_abc_vendas','numero'];
+      const sep = ';';
+      const esc = (v) => { const s = (v === null || v === undefined) ? '' : String(v); return s.includes(sep) || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      let csv = '\uFEFF' + cols.join(sep) + '\n';
+      data.forEach(p => { csv += cols.map(c => esc(p[c])).join(sep) + '\n'; });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'produtos_crs_brands.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('CSV exportado com sucesso!', 'success');
     }
 
     function onProdutosSearch() {
