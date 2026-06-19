@@ -20,7 +20,6 @@
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
       --color-primary: #0a1f5c;
@@ -586,7 +585,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <input type="text" id="produtosSearch" class="form-control" style="max-width:280px;height:36px;padding:8px 14px;" placeholder="Buscar por código, descrição, família..." oninput="onProdutosSearch()" />
-                <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;" onclick="showModal('importProdutosModal')"><i data-lucide="upload"></i> Importar CSV/XLS</button>
+                <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;" onclick="showModal('importProdutosModal')"><i data-lucide="upload"></i> Importar CSV</button>
                 <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick="openProdutoModal('create')"><i data-lucide="plus"></i> Novo Produto</button>
               </div>
             </div>
@@ -685,7 +684,7 @@
     </div>
   </div>
 
-  <!-- IMPORT PRODUTOS MODAL (CSV/XLS) -->
+  <!-- IMPORT PRODUTOS MODAL (CSV) -->
   <div class="modal-overlay" id="importProdutosModal">
     <div class="modal-box" style="max-width:520px;">
       <div class="modal-header">
@@ -694,14 +693,14 @@
       </div>
       <div class="modal-body">
         <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">
-          Envie um arquivo <strong>CSV</strong> ou <strong>XLS/XLSX</strong> com os produtos para atualizar o catálogo. O conteúdo atual será substituído (snapshot).
+          Envie um arquivo <strong>CSV</strong> com os produtos para atualizar o catálogo.
         </p>
         <div class="drop-zone" id="dropZone" onclick="document.getElementById('importFileInput').click();">
           <span class="drop-icon"><i data-lucide="upload-cloud"></i></span>
           <div class="drop-title">Arraste o arquivo aqui</div>
           <div class="drop-subtitle">ou clique para selecionar</div>
-          <div class="drop-formats">CSV • XLS • XLSX</div>
-          <input type="file" id="importFileInput" accept=".csv,.xls,.xlsx" onchange="onImportFileSelect(event)" />
+          <div class="drop-formats">Apenas .CSV</div>
+          <input type="file" id="importFileInput" accept=".csv" onchange="onImportFileSelect(event)" />
           <div id="importFileInfo" style="display:none;"></div>
         </div>
         <div id="importUploadProgress" class="upload-progress" style="display:none;">
@@ -922,7 +921,7 @@
     function showAddUserModal() { showModal('addUserModal'); }
 
     // ===========================
-    // IMPORTAR PRODUTOS (CSV/XLS via n8n webhook)
+    // IMPORTAR PRODUTOS (CSV via n8n webhook)
     // ===========================
     let importSelectedFile = null;
 
@@ -942,8 +941,8 @@
       const file = event.target.files[0];
       if (!file) return;
       const ext = file.name.split('.').pop().toLowerCase();
-      if (!['csv', 'xls', 'xlsx'].includes(ext)) {
-        showToast('Formato inválido. Aceita apenas CSV, XLS ou XLSX.', 'error');
+      if (ext !== 'csv') {
+        showToast('Arquivo inválido. Envie um arquivo CSV.', 'error');
         return;
       }
       importSelectedFile = file;
@@ -987,7 +986,7 @@
       }
     })();
 
-    async function submitImportProdutos() {
+     async function submitImportProdutos() {
       if (!importSelectedFile) {
         showToast('Selecione um arquivo primeiro.', 'error');
         return;
@@ -1019,21 +1018,54 @@
         const n8nUrl = 'https://longflatworm-n8n.cloudfy.live/webhook/crs-brands-import-produtos';
         const resp = await fetch(n8nUrl, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Authorization': `Bearer ${token}` },
           body: formData
         });
 
         progressBar.style.width = '80%';
         progressText.textContent = 'Processando...';
 
-        const result = await resp.json();
+        // Lê como texto primeiro para evitar erro de JSON inválido
+        const responseText = await resp.text();
+        let result = {};
+        try {
+          result = JSON.parse(responseText);
+        } catch (_) {
+          result = { error: responseText.substring(0, 500) || `Servidor retornou status ${resp.status}` };
+        }
 
         progressBar.style.width = '100%';
 
         if (!resp.ok || result.ok === false) {
-          throw new Error(result.error || `Erro HTTP ${resp.status}`);
+          let tituloErro = 'Erro na importação';
+          let erroDetalhado = result.error || `Erro HTTP ${resp.status}`;
+
+          switch (resp.status) {
+            case 401:
+              tituloErro = 'Sessão expirada';
+              erroDetalhado = 'Sua sessão expirou ou o token de acesso é inválido. Faça login novamente.';
+              break;
+            case 403:
+              tituloErro = 'Acesso negado';
+              erroDetalhado = result.error || 'Você não tem permissão de administrador para importar produtos.';
+              break;
+            case 404:
+              tituloErro = 'Webhook não encontrado';
+              erroDetalhado = 'O fluxo de importação não está ativo no n8n. Verifique se o workflow foi importado e ativado.';
+              break;
+            case 422:
+              tituloErro = 'Arquivo inválido';
+              erroDetalhado = result.error || 'Colunas do arquivo não condizem com o esperado.';
+              break;
+            case 500:
+              tituloErro = 'Erro interno do servidor';
+              erroDetalhado = result.error || 'Ocorreu um erro no servidor de processamento. Tente novamente.';
+              break;
+            default:
+              if (result.error) erroDetalhado = result.error;
+          }
+
+          throw { titulo: tituloErro, mensagem: erroDetalhado };
         }
 
         progressText.textContent = 'Concluído!';
@@ -1044,9 +1076,11 @@
       } catch (e) {
         progressText.textContent = 'Erro na importação';
         progressBar.style.width = '0%';
-        resultEl.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(211,47,47,0.08);border-radius:var(--radius-sm);border:1px solid rgba(211,47,47,0.2);"><span style="font-size:20px;">❌</span><div><strong>Erro na importação</strong><div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtmlProd(e.message) + '</div></div></div>';
+        const titulo = e.titulo || 'Erro na importação';
+        const msg = e.mensagem || e.message || 'Erro desconhecido';
+        resultEl.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(211,47,47,0.08);border-radius:var(--radius-sm);border:1px solid rgba(211,47,47,0.2);"><span style="font-size:20px;">❌</span><div><strong>' + escapeHtmlProd(titulo) + '</strong><div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px;">' + escapeHtmlProd(msg) + '</div></div></div>';
         resultEl.style.display = 'block';
-        showToast('Erro: ' + e.message, 'error');
+        showToast(titulo + ': ' + msg, 'error');
       } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = '<i data-lucide="upload"></i> Importar';

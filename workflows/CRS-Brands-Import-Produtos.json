@@ -2,60 +2,16 @@
   "nodes": [
     {
       "parameters": {
-        "operation": "upsert",
-        "schema": {
-          "__rl": true,
-          "value": "public",
-          "mode": "list",
-          "cachedResultName": "public"
-        },
-        "table": {
-          "__rl": true,
-          "value": "crs_brands_produtos",
-          "mode": "list",
-          "cachedResultName": "crs_brands_produtos"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "matchingColumns": [
-            "id_item"
-          ],
-          "schema": [],
-          "attemptToConvertTypes": false,
-          "convertFieldsToString": false
-        },
-        "options": {}
-      },
-      "id": "172050af-7a4e-4a67-be2f-1f9fe10803dd",
-      "name": "UPSERT Produtos",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        1728,
-        304
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "jFjeYH6Nt3aRNkoM",
-          "name": "Supabase_database"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "content": "## 📦 ETL Webhook — Importar Catálogo de Produtos (CRS Brands)\n\n**Ativado por:** `forecast.html` ao enviar CSV/XLS na aba Produtos.\n\n**Fluxo (UPSERT — sem TRUNCATE, seguro com FKs):**\n1. Webhook recebe POST multipart: `file` (CSV/XLS) + `Authorization: Bearer <JWT>`\n2. Valida token JWT\n3. Valida admin via RPC `crs_brants_admin_list_users`\n4. Restaura binário do webhook\n5. Parse CSV/XLS, valida e normaliza colunas\n6. UPSERT (INSERT ON CONFLICT) na tabela `crs_brands_produtos`\n7. Retorna 200 com contagem de linhas\n\n### ⚠️ Configure antes de usar\n1. Credencial **Postgres** (Supabase_database) no nó UPSERT.\n2. Webhook path: `crs-brands-import-produtos`.",
-        "height": 340,
-        "width": 560,
+        "content": "## 📦 ETL Webhook — Importar Catálogo de Produtos (CRS Brands)\n\n**Fluxo (UPSERT — seguro com FKs):**\n1. Webhook recebe POST multipart + JWT\n2. Valida token → 401 se ausente\n3. Valida admin via RPC → 403 se não admin\n4. Restaura binário do webhook\n5. Parse CSV com try-catch → 422 se arquivo inválido\n6. If: erro → respond 422 | OK → UPSERT → respond 200\n\n### ⚠️ Configure antes de usar\n1. Credencial **Postgres** (Supabase_database) no nó UPSERT.\n2. Webhook path: `crs-brands-import-produtos`.",
+        "height": 300,
+        "width": 500,
         "color": 4
       },
       "id": "cc3664b9-47a7-437d-a7be-fe363a2deb28",
       "name": "Sticky Note Setup1",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [
-        176,
-        -96
-      ]
+      "position": [176, -120]
     },
     {
       "parameters": {
@@ -68,10 +24,7 @@
       "name": "Webhook Trigger1",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        176,
-        304
-      ],
+      "position": [176, 304],
       "webhookId": "crs-brands-import-produtos-001"
     },
     {
@@ -103,87 +56,19 @@
       "name": "Tem Authorization?1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
-      "position": [
-        432,
-        304
-      ]
+      "position": [432, 304]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ ok: false, error: 'Não foi possível autenticar usuário. Token de acesso ausente.' }) }}",
-        "options": {
-          "responseCode": 401
-        }
+        "options": { "responseCode": 401 }
       },
       "id": "837b085f-f6a5-4aaf-a1dd-eb409da1bdac",
       "name": "401 Sem Token1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        688,
-        512
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Usuário não possui permissão para realizar esta ação. Apenas administradores.' }) }}",
-        "options": {
-          "responseCode": 403
-        }
-      },
-      "id": "e691c27c-77e2-46d5-84d2-2751187cef1a",
-      "name": "403 Não Admin1",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1184,
-        512
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const wh = $('Webhook Trigger1').first();\nif (!wh || !wh.binary || !Object.keys(wh.binary).length) {\n  throw new Error('Nenhum arquivo enviado. Envie um CSV ou XLS/XLSX.');\n}\nconst item = $input.first();\nitem.binary = wh.binary;\nreturn [item];\n"
-      },
-      "id": "01ed44ff-660f-44ea-9e51-eb7a2c72b244",
-      "name": "Restaurar Binário1",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1184,
-        304
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const bin = $input.first().binary || {};\nconst binProp = bin.file ? 'file' : Object.keys(bin)[0];\nif (!binProp) throw new Error('Nenhum arquivo binário encontrado no webhook.');\nconst buf = await this.helpers.getBinaryDataBuffer(0, binProp);\n\nlet text = buf.toString('utf8');\nif (((text.match(/\\uFFFD/g) || []).length) > 3) text = buf.toString('latin1');\ntext = text.replace(/^\\uFEFF/, '');\n\nconst lines = text.split(/\\r?\\n/).filter((l) => l.trim().length);\nif (!lines.length) throw new Error('Arquivo vazio. Envie um CSV/XLS com dados.');\n\nconst sniff = lines.slice(0, 8).join('\\n');\nconst delim = ((sniff.split(';').length) >= (sniff.split(',').length)) ? ';' : ',';\n\nfunction parseLine(line) {\n  const out = []; let cur = ''; let q = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (q) {\n      if (ch === '\"') { if (line[i + 1] === '\"') { cur += '\"'; i++; } else q = false; }\n      else cur += ch;\n    } else {\n      if (ch === '\"') q = true;\n      else if (ch === delim) { out.push(cur); cur = ''; }\n      else cur += ch;\n    }\n  }\n  out.push(cur);\n  return out.map((s) => s.trim());\n}\n\nconst header = parseLine(lines[0]).map(h => h.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim());\n\nconst REQUIRED_COLS = ['id_item'];\nconst VALID_COLS = ['id_item','descricao','tipo_mercado','familia_totvs','familia_comercial','familia_plan_i','familia_plan_ii','curva_abc_est','curva_abc_vendas','numero'];\n\nconst COL_ALIASES = {\n  'codigo':'id_item','cod':'id_item','cod_item':'id_item','id':'id_item','idproduto':'id_item','id_produto':'id_item',\n  'nome':'descricao','desc':'descricao','produto':'descricao',\n  'tipo':'tipo_mercado','mercado':'tipo_mercado',\n  'familia':'familia_totvs','familiatotvs':'familia_totvs','familiacomercial':'familia_comercial',\n  'familiaplani':'familia_plan_i','familiaplan1':'familia_plan_i',\n  'familiaplanii':'familia_plan_ii','familiaplan2':'familia_plan_ii',\n  'curva_estoque':'curva_abc_est','curva_vendas':'curva_abc_vendas',\n  'num':'numero','numeroitem':'numero'\n};\n\nfunction mapColName(raw) {\n  const clean = raw.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9_]/g, '');\n  if (VALID_COLS.includes(clean)) return clean;\n  if (COL_ALIASES[clean]) return COL_ALIASES[clean];\n  const match = VALID_COLS.find(c => clean.includes(c) || c.includes(clean));\n  if (match) return match;\n  return clean;\n}\n\nconst mappedHeader = header.map(mapColName);\n\nconst missingRequired = REQUIRED_COLS.filter(c => !mappedHeader.includes(c));\nif (missingRequired.length > 0) {\n  throw new Error(`Formato inválido. Coluna obrigatória não encontrada: ${missingRequired.join(', ')}. Colunas aceitas: ${VALID_COLS.join(', ')}`);\n}\n\nconst rows = [];\nfor (let i = 1; i < lines.length; i++) {\n  const cells = parseLine(lines[i]);\n  if (cells.every((c) => c === '')) continue;\n  const o = {};\n  mappedHeader.forEach((key, idx) => {\n    if (VALID_COLS.includes(key)) o[key] = cells[idx] !== undefined ? cells[idx] : null;\n  });\n  for (const [k, v] of Object.entries(o)) { if (v === '' || v === undefined) o[k] = null; }\n  if (o.numero !== null && o.numero !== undefined) {\n    const n = parseInt(String(o.numero).replace(/[^0-9-]/g, ''), 10);\n    o.numero = Number.isNaN(n) ? null : n;\n  }\n  for (const campo of ['curva_abc_est','curva_abc_vendas']) {\n    if (o[campo]) {\n      o[campo] = String(o[campo]).trim().toUpperCase().charAt(0);\n      if (!['A','B','C'].includes(o[campo])) o[campo] = null;\n    }\n  }\n  if (o.id_item && String(o.id_item).trim() !== '') rows.push({ json: o });\n}\n\nif (rows.length === 0) throw new Error('Nenhuma linha válida encontrada. Verifique a coluna id_item.');\nreturn rows;\n"
-      },
-      "id": "9daf897d-9b5b-449f-97dc-2763a8c71ec6",
-      "name": "Parse & Validate CSV1",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1440,
-        304
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ ok: true, message: 'Catálogo de produtos atualizado com sucesso.', linhas: $('Parse & Validate CSV1').all().length }) }}",
-        "options": {
-          "responseCode": 200
-        }
-      },
-      "id": "9185a5d1-bbd1-49d8-bd85-e904a263bdfb",
-      "name": "200 OK1",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        2032,
-        304
-      ]
+      "position": [688, 512]
     },
     {
       "parameters": {
@@ -192,30 +77,19 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $json.headers.authorization }}"
-            },
-            {
-              "name": "apikey",
-              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
-            }
+            { "name": "Authorization", "value": "={{ $json.headers.authorization }}" },
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg" }
           ]
         },
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": []
-        },
+        "bodyParameters": { "parameters": [] },
         "options": {}
       },
       "id": "63013ded-d512-4821-a365-3111ff7cf8ac",
       "name": "Validate Admin RPC1",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        688,
-        304
-      ]
+      "position": [688, 304]
     },
     {
       "parameters": {
@@ -231,10 +105,7 @@
               "id": "cond-admin-001",
               "leftValue": "={{ $json.role}}",
               "rightValue": "admin",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
+              "operator": { "type": "string", "operation": "equals" }
             }
           ],
           "combinator": "and"
@@ -245,107 +116,178 @@
       "name": "Admin OK?1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
-      "position": [
-        928,
-        352
-      ]
+      "position": [928, 352]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Usuário não possui permissão para realizar esta ação. Apenas administradores.' }) }}",
+        "options": { "responseCode": 403 }
+      },
+      "id": "e691c27c-77e2-46d5-84d2-2751187cef1a",
+      "name": "403 Não Admin1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1184, 512]
+    },
+    {
+      "parameters": {
+        "jsCode": "const wh = $('Webhook Trigger1').first();\nif (!wh || !wh.binary || !Object.keys(wh.binary).length) {\n  throw new Error('Nenhum arquivo enviado. Envie um CSV ou XLS/XLSX.');\n}\nconst item = $input.first();\nitem.binary = wh.binary;\nreturn [item];\n"
+      },
+      "id": "01ed44ff-660f-44ea-9e51-eb7a2c72b244",
+      "name": "Restaurar Binário1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1184, 304]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Parse CSV com try-catch =====\ntry {\n  const bin = $input.first().binary || {};\n  const binProp = bin.file ? 'file' : Object.keys(bin)[0];\n  if (!binProp) {\n    return [{ json: { _erro: true, _erro_msg: 'Nenhum arquivo enviado.' } }];\n  }\n\n  // Detecta extensão do arquivo\n  const fileName = (bin[binProp]?.fileName || '').toLowerCase();\n  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {\n    return [{ json: { _erro: true, _erro_msg: 'Formato XLS/XLSX não suportado. Envie um arquivo CSV.' } }];\n  }\n  if (fileName && !fileName.endsWith('.csv')) {\n    return [{ json: { _erro: true, _erro_msg: 'Formato não suportado. Envie um arquivo CSV.' } }];\n  }\n\n  const buf = await this.helpers.getBinaryDataBuffer(0, binProp);\n\n  let text = buf.toString('utf8');\n  if (((text.match(/\\uFFFD/g) || []).length) > 3) text = buf.toString('latin1');\n  text = text.replace(/^\\uFEFF/, '');\n\n  // Se o conteúdo parece binário (XLSX disfarçado de CSV), rejeita\n  if (text.includes('[Content_Types].xml') || text.includes('\\x00')) {\n    return [{ json: { _erro: true, _erro_msg: 'Arquivo não é um CSV válido. Envie um arquivo CSV.' } }];\n  }\n\n  const lines = text.split(/\\r?\\n/).filter((l) => l.trim().length);\n  if (!lines.length) {\n    return [{ json: { _erro: true, _erro_msg: 'Arquivo vazio.' } }];\n  }\n\n  const sniff = lines.slice(0, 8).join('\\n');\n  const delim = ((sniff.split(';').length) >= (sniff.split(',').length)) ? ';' : ',';\n\n  function parseLine(line) {\n    const out = []; let cur = ''; let q = false;\n    for (let i = 0; i < line.length; i++) {\n      const ch = line[i];\n      if (q) {\n        if (ch === '\"') { if (line[i + 1] === '\"') { cur += '\"'; i++; } else q = false; }\n        else cur += ch;\n      } else {\n        if (ch === '\"') q = true;\n        else if (ch === delim) { out.push(cur); cur = ''; }\n        else cur += ch;\n      }\n    }\n    out.push(cur);\n    return out.map((s) => s.trim());\n  }\n\n  const header = parseLine(lines[0]).map(h => h.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim());\n\n  const REQUIRED_COLS = ['id_item'];\n  const VALID_COLS = ['id_item','descricao','tipo_mercado','familia_totvs','familia_comercial','familia_plan_i','familia_plan_ii','curva_abc_est','curva_abc_vendas','numero'];\n\n  const COL_ALIASES = {\n    'codigo':'id_item','cod':'id_item','cod_item':'id_item','id':'id_item','idproduto':'id_item','id_produto':'id_item',\n    'nome':'descricao','desc':'descricao','produto':'descricao',\n    'tipo':'tipo_mercado','mercado':'tipo_mercado',\n    'familia':'familia_totvs','familiatotvs':'familia_totvs','familiacomercial':'familia_comercial',\n    'familiaplani':'familia_plan_i','familiaplan1':'familia_plan_i',\n    'familiaplanii':'familia_plan_ii','familiaplan2':'familia_plan_ii',\n    'curva_estoque':'curva_abc_est','curva_vendas':'curva_abc_vendas',\n    'num':'numero','numeroitem':'numero'\n  };\n\n  function mapColName(raw) {\n    const clean = raw.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9_]/g, '');\n    if (VALID_COLS.includes(clean)) return clean;\n    if (COL_ALIASES[clean]) return COL_ALIASES[clean];\n    const match = VALID_COLS.find(c => clean.includes(c) || c.includes(clean));\n    if (match) return match;\n    return clean;\n  }\n\n  const mappedHeader = header.map(mapColName);\n\n  const missingRequired = REQUIRED_COLS.filter(c => !mappedHeader.includes(c));\n  if (missingRequired.length > 0) {\n    return [{ json: { _erro: true, _erro_msg: 'Colunas do arquivo não condizem com o esperado.' } }];\n  }\n\n  const rows = [];\n  for (let i = 1; i < lines.length; i++) {\n    const cells = parseLine(lines[i]);\n    if (cells.every((c) => c === '')) continue;\n    const o = {};\n    mappedHeader.forEach((key, idx) => {\n      if (VALID_COLS.includes(key)) o[key] = cells[idx] !== undefined ? cells[idx] : null;\n    });\n    for (const [k, v] of Object.entries(o)) { if (v === '' || v === undefined) o[k] = null; }\n    if (o.numero !== null && o.numero !== undefined) {\n      const n = parseInt(String(o.numero).replace(/[^0-9-]/g, ''), 10);\n      o.numero = Number.isNaN(n) ? null : n;\n    }\n    for (const campo of ['curva_abc_est','curva_abc_vendas']) {\n      if (o[campo]) {\n        o[campo] = String(o[campo]).trim().toUpperCase().charAt(0);\n        if (!['A','B','C'].includes(o[campo])) o[campo] = null;\n      }\n    }\n    if (o.id_item && String(o.id_item).trim() !== '') rows.push({ json: o });\n  }\n\n  if (rows.length === 0) {\n    return [{ json: { _erro: true, _erro_msg: 'Nenhuma linha válida encontrada. Verifique as colunas do arquivo.' } }];\n  }\n\n  // Sucesso: adiciona flag _erro=false e metadados\n  rows.forEach(r => { r.json._erro = false; });\n  return rows;\n\n} catch (e) {\n  return [{ json: { _erro: true, _erro_msg: 'Erro ao processar arquivo.' } }];\n}\n"
+      },
+      "id": "9daf897d-9b5b-449f-97dc-2763a8c71ec6",
+      "name": "Parse & Validate CSV1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 304]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-erro-parse",
+              "leftValue": "={{ $json._erro }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f1a2b3c4-0001-4000-a000-erro-check-0001",
+      "name": "Parse OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1700, 304]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: $json._erro_msg }) }}",
+        "options": { "responseCode": 422 }
+      },
+      "id": "f1a2b3c4-0001-4000-a000-erro-respond-0001",
+      "name": "422 Arquivo Inválido",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1950, 448]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Remove a flag _erro antes de enviar para o UPSERT\nreturn $input.all().map(item => {\n  const j = Object.assign({}, item.json);\n  delete j._erro;\n  return { json: j };\n});\n"
+      },
+      "id": "f1a2b3c4-0001-4000-a000-limpar-flag-0001",
+      "name": "Limpar Flag Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1950, 192]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "crs_brands_produtos",
+          "mode": "list",
+          "cachedResultName": "crs_brands_produtos"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["id_item"],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "172050af-7a4e-4a67-be2f-1f9fe10803dd",
+      "name": "UPSERT Produtos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2200, 192],
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, message: 'Catálogo de produtos atualizado com sucesso.', linhas: $('Limpar Flag Erro').all().length }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "9185a5d1-bbd1-49d8-bd85-e904a263bdfb",
+      "name": "200 OK1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2450, 192]
     }
   ],
   "connections": {
-    "UPSERT Produtos": {
-      "main": [
-        [
-          {
-            "node": "200 OK1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Webhook Trigger1": {
-      "main": [
-        [
-          {
-            "node": "Tem Authorization?1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Tem Authorization?1", "type": "main", "index": 0 }]]
     },
     "Tem Authorization?1": {
       "main": [
-        [
-          {
-            "node": "Validate Admin RPC1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "401 Sem Token1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Restaurar Binário1": {
-      "main": [
-        [
-          {
-            "node": "Parse & Validate CSV1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse & Validate CSV1": {
-      "main": [
-        [
-          {
-            "node": "UPSERT Produtos",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Validate Admin RPC1", "type": "main", "index": 0 }],
+        [{ "node": "401 Sem Token1", "type": "main", "index": 0 }]
       ]
     },
     "Validate Admin RPC1": {
-      "main": [
-        [
-          {
-            "node": "Admin OK?1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Admin OK?1", "type": "main", "index": 0 }]]
     },
     "Admin OK?1": {
       "main": [
-        [
-          {
-            "node": "Restaurar Binário1",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "403 Não Admin1",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Restaurar Binário1", "type": "main", "index": 0 }],
+        [{ "node": "403 Não Admin1", "type": "main", "index": 0 }]
       ]
+    },
+    "Restaurar Binário1": {
+      "main": [[{ "node": "Parse & Validate CSV1", "type": "main", "index": 0 }]]
+    },
+    "Parse & Validate CSV1": {
+      "main": [[{ "node": "Parse OK?", "type": "main", "index": 0 }]]
+    },
+    "Parse OK?": {
+      "main": [
+        [{ "node": "422 Formato Inválido", "type": "main", "index": 0 }],
+        [{ "node": "Limpar Flag Erro", "type": "main", "index": 0 }]
+      ]
+    },
+    "Limpar Flag Erro": {
+      "main": [[{ "node": "UPSERT Produtos", "type": "main", "index": 0 }]]
+    },
+    "UPSERT Produtos": {
+      "main": [[{ "node": "200 OK1", "type": "main", "index": 0 }]]
     }
   },
-  "pinData": {},
-  "meta": {
-    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
-  }
+  "pinData": {}
 }
