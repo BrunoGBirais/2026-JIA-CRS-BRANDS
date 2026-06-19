@@ -1,0 +1,12 @@
+-- =============================================
+-- CRS Brands – 009: Policies / RLS (reservado)
+-- =============================================
+-- O conteudo anterior (RLS e policies do modelo antigo) foi REMOVIDO na
+-- mudanca de abordagem para o Star Schema definido em 007_forecast_tables.sql
+-- / docs/Documentacao_Migrations_SOP.md.
+--
+-- As policies do novo modelo (RLS sobre crs_brands_regioes, crs_brands_produtos,
+-- crs_brands_de_para e crs_brands_fatos_vendas) serao adicionadas nesta
+-- migration em etapa posterior. Mantida como no-op para preservar a sequencia.
+
+-- (sem alteracoes de schema)

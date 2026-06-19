@@ -1,0 +1,192 @@
+{
+  "name": "CRS-Forecast-Calcular-Previsao",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crs-forecast/calcular-previsao",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Calcular Previsao",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first() ? $input.first().json : {};\nconst body = (input && input.body) || input || {};\nreturn [{\n  json: {\n    nome_cenario: body.nome_cenario || ('Forecast ' + (body.ano_previsao || 2026)),\n    descricao: body.descricao || '',\n    ano_base: parseInt(body.ano_base, 10) || 2025,\n    ano_previsao: parseInt(body.ano_previsao, 10) || 2026\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 320]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "limit": 50,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1JjqIUh4zT7U5IhK5CQ8wdOHcPy95JEer",
+            "mode": "id"
+          }
+        },
+        "options": {
+          "fields": ["*"]
+        }
+      },
+      "id": "drive-list",
+      "name": "List Drive Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [640, 320],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst xlsx = items.filter(f => {\n  const name = (f.name || '').toLowerCase();\n  const mime = (f.mimeType || '').toLowerCase();\n  return name.endsWith('.xlsx') || mime.includes('spreadsheetml') || mime.includes('vnd.google-apps.spreadsheet');\n});\nif (xlsx.length === 0) {\n  throw new Error('Nenhuma planilha .xlsx encontrada na pasta do Google Drive.');\n}\nxlsx.sort((a, b) => {\n  const da = new Date(a.modifiedTime || a.createdTime || 0).getTime();\n  const db = new Date(b.modifiedTime || b.createdTime || 0).getTime();\n  return db - da;\n});\nconst latest = xlsx[0];\nreturn [{ json: { file_id: latest.id, file_name: latest.name, modified_time: latest.modifiedTime || null } }];"
+      },
+      "id": "pick-latest",
+      "name": "Pick Latest XLSX",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 320]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.file_id }}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "drive-download",
+      "name": "Download XLSX",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1040, 320],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data",
+        "options": {
+          "sheetName": "Base_Histórica_de_Vendas",
+          "headerRow": true
+        }
+      },
+      "id": "extract-historico",
+      "name": "Extract Histórico",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [1240, 240]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data",
+        "options": {
+          "sheetName": "={{ 'Orçamento_' + $('Validate Input').first().json.ano_previsao }}",
+          "headerRow": true
+        }
+      },
+      "id": "extract-orcamento",
+      "name": "Extract Orçamento",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [1240, 420],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "merge-sheets",
+      "name": "Merge Sheets",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1460, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Parâmetros =====\nconst params = $('Validate Input').first().json;\nconst anoBase = Number(params.ano_base) || 2025;\nconst anoPrev = Number(params.ano_previsao) || 2026;\n\n// ===== Fonte única (Merge: histórico + orçamento) =====\nconst rows = $input.all().map(i => i.json);\n\n// ===== Helpers =====\nconst norm = (s) => (s === undefined || s === null) ? '' : String(s).trim();\nconst num = (v) => {\n  if (typeof v === 'number') return isNaN(v) ? 0 : v;\n  if (v === undefined || v === null || v === '') return 0;\n  const n = parseFloat(String(v).replace(/\\s/g, '').replace(',', '.'));\n  return isNaN(n) ? 0 : n;\n};\nconst round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;\nfunction pick(row, names) {\n  const keys = Object.keys(row);\n  const flat = (s) => s.toLowerCase().replace(/\\s+/g, '');\n  for (const n of names) {\n    const k = keys.find(k => flat(k) === flat(n));\n    if (k) return row[k];\n  }\n  for (const n of names) {\n    const k = keys.find(k => k.toLowerCase().includes(n.toLowerCase()));\n    if (k) return row[k];\n  }\n  return undefined;\n}\n\n// ===== Classifica em uma passada (histórico = tem mês; orçamento = sem mês) =====\nconst keyMap = {};\nconst budget = {};\nlet registrosHist = 0;\nfor (const r of rows) {\n  const item = norm(pick(r, ['Item', 'SKU']));\n  const regional = norm(pick(r, ['Regional']));\n  if (!item || !regional) continue;\n  const k = item + '||' + regional;\n  const mes = parseInt(pick(r, ['Mês', 'Mes']), 10);\n  if (mes >= 1 && mes <= 12) {\n    const ano = Number(pick(r, ['Ano']));\n    if (ano !== anoBase) continue;\n    registrosHist++;\n    const q = num(pick(r, ['Quantidade', 'Qtd', 'Qtde']));\n    if (!keyMap[k]) keyMap[k] = {\n      item, regional,\n      descricao: norm(pick(r, ['Descrição', 'Descricao'])),\n      nome_regional: norm(pick(r, ['Nome Regional', 'Nome_Regional'])),\n      meses: Array(13).fill(0),\n      total: 0\n    };\n    keyMap[k].meses[mes] += q;\n    keyMap[k].total += q;\n  } else {\n    const val = num(pick(r, ['Orçamento Total', 'Orcamento Total', 'Orçamento', 'Orcamento', 'Total', 'Budget']));\n    if (val > 0) budget[k] = (budget[k] || 0) + val;\n  }\n}\n\nif (Object.keys(keyMap).length === 0) {\n  return [{ json: { success: false, error: 'Nenhum dado encontrado para o ano base ' + anoBase + ' na aba Base_Histórica_de_Vendas.' } }];\n}\nconst temOrcamento = Object.keys(budget).length > 0;\n\n// ===== Cálculo =====\nconst mensal = Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, previsto: 0, anterior: 0 }));\nconst regAgg = {};\nconst skuAgg = {};\nlet totalPrev = 0, totalAnt = 0, absErr = 0, mapeSum = 0, mapeCount = 0;\n\nfor (const k in keyMap) {\n  const e = keyMap[k];\n  const bud = budget[k];\n  for (let m = 1; m <= 12; m++) {\n    const anterior = e.meses[m];\n    const season = e.total > 0 ? e.meses[m] / e.total : 1 / 12;\n    const orcDist = (bud !== undefined ? bud : e.total) * season;\n    const prevista = bud !== undefined ? orcDist : anterior;\n    const dif = prevista - anterior;\n    mensal[m - 1].previsto += prevista;\n    mensal[m - 1].anterior += anterior;\n    totalPrev += prevista; totalAnt += anterior; absErr += Math.abs(dif);\n    if (anterior > 0) { mapeSum += Math.abs(dif) / anterior; mapeCount++; }\n    if (!regAgg[e.regional]) regAgg[e.regional] = { regional: e.regional, nome_regional: e.nome_regional, previsto: 0, anterior: 0, itens: new Set() };\n    regAgg[e.regional].previsto += prevista;\n    regAgg[e.regional].anterior += anterior;\n    regAgg[e.regional].itens.add(e.item);\n    if (!skuAgg[e.item]) skuAgg[e.item] = { item: e.item, descricao: e.descricao, total_previsto: 0, total_anterior: 0 };\n    skuAgg[e.item].total_previsto += prevista;\n    skuAgg[e.item].total_anterior += anterior;\n  }\n}\n\nconst wape = totalAnt > 0 ? absErr / totalAnt : null;\nconst mape = mapeCount > 0 ? mapeSum / mapeCount : null;\nconst accuracy = wape !== null ? Math.max(0, Math.min(1, 1 - wape)) : null;\n\nconst por_regional = Object.values(regAgg).map(r => ({\n  regional: r.regional, nome_regional: r.nome_regional,\n  previsto: round2(r.previsto), anterior: round2(r.anterior),\n  diferenca: round2(r.previsto - r.anterior), itens: r.itens.size\n})).sort((a, b) => b.previsto - a.previsto);\n\nconst top_skus = Object.values(skuAgg).map(s => ({\n  item: s.item, descricao: s.descricao,\n  total_previsto: round2(s.total_previsto), total_anterior: round2(s.total_anterior),\n  crescimento_percentual: s.total_anterior > 0 ? round2((s.total_previsto - s.total_anterior) / s.total_anterior * 100) : 0\n})).sort((a, b) => b.total_previsto - a.total_previsto);\n\nmensal.forEach(x => { x.previsto = round2(x.previsto); x.anterior = round2(x.anterior); });\n\nconst src = $('Pick Latest XLSX').first().json;\nreturn [{ json: {\n  success: true,\n  source: { file_id: src.file_id, file_name: src.file_name, modified_time: src.modified_time },\n  cenario: { nome: params.nome_cenario, descricao: params.descricao, ano_base: anoBase, ano_previsao: anoPrev, base_orcamento: temOrcamento },\n  kpis: {\n    total_previsto: round2(totalPrev),\n    total_anterior: round2(totalAnt),\n    mape: mape,\n    wape: wape,\n    forecast_accuracy: accuracy,\n    skus: Object.keys(skuAgg).length,\n    registros_base: registrosHist\n  },\n  mensal,\n  por_regional,\n  top_skus\n} }];"
+      },
+      "id": "calcular-forecast",
+      "name": "Calcular Forecast",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1680, 320]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1900, 320]
+    }
+  ],
+  "connections": {
+    "Webhook Calcular Previsao": {
+      "main": [[{ "node": "Validate Input", "type": "main", "index": 0 }]]
+    },
+    "Validate Input": {
+      "main": [[{ "node": "List Drive Folder", "type": "main", "index": 0 }]]
+    },
+    "List Drive Folder": {
+      "main": [[{ "node": "Pick Latest XLSX", "type": "main", "index": 0 }]]
+    },
+    "Pick Latest XLSX": {
+      "main": [[{ "node": "Download XLSX", "type": "main", "index": 0 }]]
+    },
+    "Download XLSX": {
+      "main": [[
+        { "node": "Extract Histórico", "type": "main", "index": 0 },
+        { "node": "Extract Orçamento", "type": "main", "index": 0 }
+      ]]
+    },
+    "Extract Histórico": {
+      "main": [[{ "node": "Merge Sheets", "type": "main", "index": 0 }]]
+    },
+    "Extract Orçamento": {
+      "main": [[{ "node": "Merge Sheets", "type": "main", "index": 1 }]]
+    },
+    "Merge Sheets": {
+      "main": [[{ "node": "Calcular Forecast", "type": "main", "index": 0 }]]
+    },
+    "Calcular Forecast": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

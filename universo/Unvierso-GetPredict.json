@@ -1,0 +1,128 @@
+{
+  "name": "Unvierso-GetPredict",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "GetPredict",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -384,
+        -400
+      ],
+      "id": "bb4f675d-e7f3-4ad7-bc62-91724851dc02",
+      "name": "Webhook",
+      "webhookId": "6d91746b-e36d-4f37-9a2d-bf9344004c85"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "iNUOvaoT6pai9vFx",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/iNUOvaoT6pai9vFx",
+          "cachedResultName": "Universo-GetCached"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -160,
+        -400
+      ],
+      "id": "2ab0be13-bba0-4370-a30a-44780f1b9903",
+      "name": "Call 'Universo-GetCached'",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza a saida do Universo-GetCached para o front:\n//   - sempre retorna um array com 1 envelope { data, createdAt, validation, forecastTargets }\n//   - se o cache estiver vazio/invalido, retorna [] (front mostra estado vazio)\nconst items = $input.all();\nlet env = null;\nif (items && items.length && items[0] && items[0].json) {\n  env = items[0].json;\n  // Se vier embrulhado como { json: {...} } por algum motivo, desembrulha.\n  if (env && env.json && env.data == null) env = env.json;\n}\nif (!env || !Array.isArray(env.data) || env.data.length === 0) {\n  return [{ json: { __empty: true, payload: [] } }];\n}\nreturn [{ json: { __empty: false, payload: [env] } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        -400
+      ],
+      "id": "normalize-cached",
+      "name": "Normalize Cached"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.payload }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        256,
+        -400
+      ],
+      "id": "13663bad-b65e-4482-b036-96beda850937",
+      "name": "Respond Cached"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call 'Universo-GetCached'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Universo-GetCached'": {
+      "main": [
+        [
+          {
+            "node": "Normalize Cached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Cached": {
+      "main": [
+        [
+          {
+            "node": "Respond Cached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f2e4aa55-214d-4614-9810-06842ae2d643",
+  "meta": {
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "id": "ohhBJ8BgKCsSKL0X",
+  "tags": []
+}

@@ -1,0 +1,300 @@
+{
+  "name": "Universo-Users",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        128
+      ],
+      "id": "f7513a4a-8f25-412d-ac5d-418606aecade",
+      "name": "Init"
+    },
+    {
+      "parameters": {
+        "content": "### 1. `users` Table\nStores the core user credentials and links the user to a specific role.\n\n| Column Name | Data Type | Constraints | Description |\n| :--- | :--- | :--- | :--- |\n| **id** | Integer / UUID | Primary Key | Unique identifier for the user. |\n| **username** | Varchar | Unique, Not Null | The user's login name. |\n| **password_hash** | Varchar | Not Null | Securely hashed password. |\n| **role_id** | Integer / UUID | Foreign Key | Links to `roles.id`. |\n| **created_at** | Timestamp | Default: Current | When the account was created. |\n\n---\n\n### 2. `roles` Table\nDefines the high-level roles available in your system.\n\n| Column Name | Data Type | Constraints | Description |\n| :--- | :--- | :--- | :--- |\n| **id** | Integer / UUID | Primary Key | Unique identifier for the role. |\n| **name** | Varchar | Unique, Not Null | The name of the role (e.g., 'admin'). |\n| **description** | Text | Nullable | Optional details about the role's purpose. |\n\n---\n\n### 3. `role_permissions` Table\nMaps specific granular permissions to a role.\n\n| Column Name | Data Type | Constraints | Description |\n| :--- | :--- | :--- | :--- |\n| **id** | Integer / UUID | Primary Key | Unique identifier for the mapping. |\n| **role_id** | Integer / UUID | Foreign Key | Links to `roles.id`. |\n| **permission** | Varchar | Not Null | The specific action allowed (e.g., 'read:reports'). |\n\n---",
+        "height": 1008,
+        "width": 896
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -112,
+        -592
+      ],
+      "typeVersion": 1,
+      "id": "2c60c5f9-8342-471e-821f-a79dab4fe30a",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/auth/v1/token?grant_type=password",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "admin@universotintas.com.br"
+            },
+            {
+              "name": "password",
+              "value": "@Admin123"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        32,
+        1024
+      ],
+      "id": "ce91aca7-958b-4105-859e-c625c89e5a61",
+      "name": "Login",
+      "credentials": {
+        "supabaseApi": {
+          "id": "i5Q8tj8Pyc9XjSGd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://longflatworm-supabase.cloudfy.live/auth/v1/user",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        32,
+        1296
+      ],
+      "id": "9ac32840-82ed-4b9c-95b5-52f0c74c6235",
+      "name": "Get User",
+      "credentials": {
+        "supabaseApi": {
+          "id": "i5Q8tj8Pyc9XjSGd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- =============================================\n-- Universo Tintas — 001: User CRUD Functions\n-- Operates directly on auth.users (no profiles)\n-- =============================================\n\n-- =======  UP  ========\n\nDROP FUNCTION universo_t_admin_list_users();\n\nCREATE OR REPLACE FUNCTION universo_t_admin_list_users()\nRETURNS TABLE(\n  user_id    UUID,\n  email      TEXT,\n  full_name  TEXT,\n  created_at TIMESTAMPTZ\n)\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE sql\nSTABLE\nAS $$\n  SELECT\n    id AS user_id,\n    email::TEXT,\n    COALESCE(raw_user_meta_data->>'full_name', '')::TEXT AS full_name,\n    created_at\n  FROM auth.users\n  ORDER BY created_at DESC;\n$$;\n\nCREATE OR REPLACE FUNCTION universo_t_admin_confirm_user(p_user_id UUID)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  UPDATE auth.users\n  SET email_confirmed_at = NOW(),\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\nCREATE OR REPLACE FUNCTION universo_t_admin_update_user(\n  p_user_id   UUID,\n  p_full_name TEXT\n)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  UPDATE auth.users\n  SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)\n                           || jsonb_build_object('full_name', p_full_name),\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\nCREATE OR REPLACE FUNCTION universo_t_admin_delete_user(p_user_id UUID)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  DELETE FROM auth.users WHERE id = p_user_id;\nEND;\n$$;\n\nGRANT EXECUTE ON FUNCTION universo_t_admin_list_users() TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_confirm_user(UUID) TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_update_user(UUID, TEXT) TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_delete_user(UUID) TO authenticated;\n\nNOTIFY pgrst, 'reload schema';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        128,
+        16
+      ],
+      "id": "6fb784a0-7359-4688-8634-f3b2defed18f",
+      "name": "Migration UP: User CRUD functions",
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- =============================================\n-- Universo Tintas — 002: Add role to user CRUD\n-- Run AFTER 001_user_crud_functions.sql\n-- =============================================\n\n-- =======  UP  ========\n\nDROP FUNCTION IF EXISTS universo_t_admin_list_users();\nCREATE OR REPLACE FUNCTION universo_t_admin_list_users()\nRETURNS TABLE(\n  user_id    UUID,\n  email      TEXT,\n  full_name  TEXT,\n  role       TEXT,\n  created_at TIMESTAMPTZ\n)\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE sql\nSTABLE\nAS $$\n  SELECT\n    id AS user_id,\n    email::TEXT,\n    COALESCE(raw_user_meta_data->>'full_name', '')::TEXT AS full_name,\n    COALESCE(raw_user_meta_data->>'role', 'visualizador')::TEXT AS role,\n    created_at\n  FROM auth.users\n  ORDER BY created_at DESC;\n$$;\n\nDROP FUNCTION IF EXISTS universo_t_admin_update_user(UUID, TEXT);\nCREATE OR REPLACE FUNCTION universo_t_admin_update_user(\n  p_user_id   UUID,\n  p_full_name TEXT,\n  p_role      TEXT DEFAULT NULL\n)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nDECLARE\n  new_meta JSONB;\nBEGIN\n  new_meta := jsonb_build_object('full_name', p_full_name);\n  IF p_role IS NOT NULL THEN\n    new_meta := new_meta || jsonb_build_object('role', p_role);\n  END IF;\n  UPDATE auth.users\n  SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || new_meta,\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\nGRANT EXECUTE ON FUNCTION universo_t_admin_list_users() TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_update_user(UUID, TEXT, TEXT) TO authenticated;\n\nNOTIFY pgrst, 'reload schema';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        336,
+        16
+      ],
+      "id": "8f3a41d6-affa-47e1-aec7-8a681ea0fc3f",
+      "name": "Migration UP: Add roles",
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- =======  DOWN  ========\n\nREVOKE EXECUTE ON FUNCTION universo_t_admin_list_users() FROM authenticated;\nREVOKE EXECUTE ON FUNCTION universo_t_admin_confirm_user(UUID) FROM authenticated;\nREVOKE EXECUTE ON FUNCTION universo_t_admin_update_user(UUID, TEXT) FROM authenticated;\nREVOKE EXECUTE ON FUNCTION universo_t_admin_delete_user(UUID) FROM authenticated;\n\nDROP FUNCTION IF EXISTS universo_t_admin_list_users();\nDROP FUNCTION IF EXISTS universo_t_admin_confirm_user(UUID);\nDROP FUNCTION IF EXISTS universo_t_admin_update_user(UUID, TEXT);\nDROP FUNCTION IF EXISTS universo_t_admin_delete_user(UUID);\n\nNOTIFY pgrst, 'reload schema';\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        128,
+        208
+      ],
+      "id": "63cada8d-7c2e-4dbc-ae4b-0ba0294465bf",
+      "name": "Migration DOWN: User CRUD functions",
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- =======  DOWN  ========\nReverts to 001 signatures (no role)\n\nDROP FUNCTION IF EXISTS universo_t_admin_list_users();\nCREATE OR REPLACE FUNCTION universo_t_admin_list_users()\nRETURNS TABLE(\n  user_id    UUID,\n  email      TEXT,\n  full_name  TEXT,\n  created_at TIMESTAMPTZ\n)\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE sql\nSTABLE\nAS $$\n  SELECT\n    id AS user_id,\n    email::TEXT,\n    COALESCE(raw_user_meta_data->>'full_name', '')::TEXT AS full_name,\n    created_at\n  FROM auth.users\n  ORDER BY created_at DESC;\n$$;\n\nDROP FUNCTION IF EXISTS universo_t_admin_update_user(UUID, TEXT, TEXT);\nCREATE OR REPLACE FUNCTION universo_t_admin_update_user(\n  p_user_id   UUID,\n  p_full_name TEXT\n)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  UPDATE auth.users\n  SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)\n                           || jsonb_build_object('full_name', p_full_name),\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\nGRANT EXECUTE ON FUNCTION universo_t_admin_list_users() TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_update_user(UUID, TEXT) TO authenticated;\n\nNOTIFY pgrst, 'reload schema';\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        336,
+        208
+      ],
+      "id": "9e912ba2-5288-4086-9fbd-fa714891fdc3",
+      "name": "Migration DOWN: Add roles",
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- =============================================\n-- Universo Tintas — 003: Admin-only guards\n-- Adds role check inside SECURITY DEFINER functions\n-- so only users with role='admin' can call them.\n-- =============================================\n\n-- =======  UP  ========\n\n-- Helper: check if caller is admin\nCREATE OR REPLACE FUNCTION universo_t_is_admin()\nRETURNS BOOLEAN\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE sql\nSTABLE\nAS $$\n  SELECT COALESCE(\n    (SELECT raw_user_meta_data->>'role'\n     FROM auth.users\n     WHERE id = auth.uid()) = 'admin',\n    false\n  );\n$$;\n\n-- list_users: admin-only\nDROP FUNCTION IF EXISTS universo_t_admin_list_users();\nCREATE OR REPLACE FUNCTION universo_t_admin_list_users()\nRETURNS TABLE(\n  user_id    UUID,\n  email      TEXT,\n  full_name  TEXT,\n  role       TEXT,\n  created_at TIMESTAMPTZ\n)\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nSTABLE\nAS $$\nBEGIN\n  IF NOT universo_t_is_admin() THEN\n    RAISE EXCEPTION 'Acesso negado: apenas administradores.' USING ERRCODE = '42501';\n  END IF;\n  RETURN QUERY\n    SELECT\n      u.id AS user_id,\n      u.email::TEXT,\n      COALESCE(u.raw_user_meta_data->>'full_name', '')::TEXT AS full_name,\n      COALESCE(u.raw_user_meta_data->>'role', 'visualizador')::TEXT AS role,\n      u.created_at\n    FROM auth.users u\n    ORDER BY u.created_at DESC;\nEND;\n$$;\n\n-- confirm_user: admin-only\nCREATE OR REPLACE FUNCTION universo_t_admin_confirm_user(p_user_id UUID)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  IF NOT universo_t_is_admin() THEN\n    RAISE EXCEPTION 'Acesso negado: apenas administradores.' USING ERRCODE = '42501';\n  END IF;\n  UPDATE auth.users\n  SET email_confirmed_at = NOW(),\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\n-- update_user: admin-only\nDROP FUNCTION IF EXISTS universo_t_admin_update_user(UUID, TEXT, TEXT);\nCREATE OR REPLACE FUNCTION universo_t_admin_update_user(\n  p_user_id   UUID,\n  p_full_name TEXT,\n  p_role      TEXT DEFAULT NULL\n)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nDECLARE\n  new_meta JSONB;\nBEGIN\n  IF NOT universo_t_is_admin() THEN\n    RAISE EXCEPTION 'Acesso negado: apenas administradores.' USING ERRCODE = '42501';\n  END IF;\n  new_meta := jsonb_build_object('full_name', p_full_name);\n  IF p_role IS NOT NULL THEN\n    new_meta := new_meta || jsonb_build_object('role', p_role);\n  END IF;\n  UPDATE auth.users\n  SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || new_meta,\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\n-- delete_user: admin-only\nCREATE OR REPLACE FUNCTION universo_t_admin_delete_user(p_user_id UUID)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  IF NOT universo_t_is_admin() THEN\n    RAISE EXCEPTION 'Acesso negado: apenas administradores.' USING ERRCODE = '42501';\n  END IF;\n  DELETE FROM auth.users WHERE id = p_user_id;\nEND;\n$$;\n\nGRANT EXECUTE ON FUNCTION universo_t_is_admin() TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_list_users() TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_confirm_user(UUID) TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_update_user(UUID, TEXT, TEXT) TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_delete_user(UUID) TO authenticated;\n\nNOTIFY pgrst, 'reload schema';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        16
+      ],
+      "id": "5a9f5cb3-1b49-4aaf-a252-0ff824a95c77",
+      "name": "Migration UP: Admin Guards",
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- =======  DOWN  ========\n-- Reverts to 002 versions (no admin guard)\n--\nDROP FUNCTION IF EXISTS universo_t_is_admin();\n\nDROP FUNCTION IF EXISTS universo_t_admin_list_users();\nCREATE OR REPLACE FUNCTION universo_t_admin_list_users()\nRETURNS TABLE(\n  user_id    UUID,\n  email      TEXT,\n  full_name  TEXT,\n  role       TEXT,\n  created_at TIMESTAMPTZ\n)\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE sql\nSTABLE\nAS $$\n  SELECT\n    id AS user_id,\n    email::TEXT,\n    COALESCE(raw_user_meta_data->>'full_name', '')::TEXT AS full_name,\n    COALESCE(raw_user_meta_data->>'role', 'visualizador')::TEXT AS role,\n    created_at\n  FROM auth.users\n  ORDER BY created_at DESC;\n$$;\n\nCREATE OR REPLACE FUNCTION universo_t_admin_confirm_user(p_user_id UUID)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  UPDATE auth.users\n  SET email_confirmed_at = NOW(),\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\nDROP FUNCTION IF EXISTS universo_t_admin_update_user(UUID, TEXT, TEXT);\nCREATE OR REPLACE FUNCTION universo_t_admin_update_user(\n  p_user_id   UUID,\n  p_full_name TEXT,\n  p_role      TEXT DEFAULT NULL\n)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nDECLARE\n  new_meta JSONB;\nBEGIN\n  new_meta := jsonb_build_object('full_name', p_full_name);\n  IF p_role IS NOT NULL THEN\n    new_meta := new_meta || jsonb_build_object('role', p_role);\n  END IF;\n  UPDATE auth.users\n  SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || new_meta,\n      updated_at = NOW()\n  WHERE id = p_user_id;\nEND;\n$$;\n\nCREATE OR REPLACE FUNCTION universo_t_admin_delete_user(p_user_id UUID)\nRETURNS VOID\nSECURITY DEFINER\nSET search_path = auth, public\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  DELETE FROM auth.users WHERE id = p_user_id;\nEND;\n$$;\n\nGRANT EXECUTE ON FUNCTION universo_t_admin_list_users() TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_confirm_user(UUID) TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_update_user(UUID, TEXT, TEXT) TO authenticated;\nGRANT EXECUTE ON FUNCTION universo_t_admin_delete_user(UUID) TO authenticated;\n\nNOTIFY pgrst, 'reload schema';\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        208
+      ],
+      "id": "ca4ce890-b5ac-4705-a8db-6000e3e82a4c",
+      "name": "Migration DOWN: Admin Guards",
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Init": {
+      "main": [
+        [
+          {
+            "node": "Migration UP: User CRUD functions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Login": {
+      "main": [
+        []
+      ]
+    },
+    "Migration UP: User CRUD functions": {
+      "main": [
+        [
+          {
+            "node": "Migration UP: Add roles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Migration DOWN: User CRUD functions": {
+      "main": [
+        [
+          {
+            "node": "Migration DOWN: Add roles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Migration UP: Add roles": {
+      "main": [
+        [
+          {
+            "node": "Migration UP: Admin Guards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Migration DOWN: Add roles": {
+      "main": [
+        [
+          {
+            "node": "Migration DOWN: Admin Guards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c6d032e2-a811-4754-aa26-771283bf29f1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "id": "3dgHdUWNfpLr1LQV",
+  "tags": []
+}

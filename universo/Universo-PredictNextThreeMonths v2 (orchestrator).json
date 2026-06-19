@@ -1,0 +1,1079 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "PredictNextThreeMonths",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        12032,
+        6928
+      ],
+      "id": "0c700225-8f04-4301-a5e8-8b7e0a0a0663",
+      "name": "Webhook",
+      "webhookId": "6d91746b-e36d-4f37-9a2d-bf9344004c85"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "chunk",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chunk"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "finalize",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "finalize"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "default"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        12240,
+        6928
+      ],
+      "id": "a7f19071-650d-4f91-9855-88d88060282a",
+      "name": "Phase Switch"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "1MDh0fkb4-7gGha68UULDCudJ9VT0rTwSs_vIM-GxTHg",
+          "mode": "id",
+          "cachedResultName": "Dados Historicos (Google Sheets) - default",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1MDh0fkb4-7gGha68UULDCudJ9VT0rTwSs_vIM-GxTHg"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "sheetsToFormat": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        12464,
+        6608
+      ],
+      "id": "624934df-4918-476a-afdb-95303dd602be",
+      "name": "Download file (start)",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "vendas_historico"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        12672,
+        6608
+      ],
+      "id": "8af674f0-033a-4556-9aab-97ec13e6780f",
+      "name": "Extract sheet data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Coleta todas as linhas da planilha em um único item.\nconst rows = $input.all().map(i => i.json);\nreturn [{ json: { source: JSON.stringify(rows), totalSkus: rows.length } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12880,
+        6608
+      ],
+      "id": "183e19c2-2570-4788-9805-b6429ed7fd90",
+      "name": "Build Source"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "predict-source",
+        "value": "={{ $json.source }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13088,
+        6608
+      ],
+      "id": "d226fb00-e48a-48e1-ac93-0cfd81e88a1b",
+      "name": "Redis SET source",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "predict-aggregate",
+        "value": "[]",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13312,
+        6608
+      ],
+      "id": "45ab507d-9869-4efc-826e-712aa411d06c",
+      "name": "Redis SET aggregate=[]",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-response"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13520,
+        6608
+      ],
+      "id": "170c3284-700c-4735-9417-c9b449174fc3",
+      "name": "Redis DEL response",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-validation"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13728,
+        6608
+      ],
+      "id": "2acd408d-ac4a-4a03-94a7-4dde4a11335d",
+      "name": "Redis DEL validation",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-targets"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13936,
+        6608
+      ],
+      "id": "1fb6b67b-d407-481a-88d5-adb77483dca1",
+      "name": "Redis DEL targets",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'start', totalSkus: $('Build Source').first().json.totalSkus, chunkSize: 30 } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        14144,
+        6608
+      ],
+      "id": "b6d6e97c-b576-4c27-b5b0-b57796f6f2d7",
+      "name": "Respond Start"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "source",
+        "key": "predict-source",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        12464,
+        6928
+      ],
+      "id": "3719114d-19ba-429c-a0de-75b4b73d8686",
+      "name": "Redis GET source",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara o input para chamar Universo-Predict v2.\nconst src = $json.source;\nif (!src) {\n  throw new Error(\"predict-source vazio. Chame phase='start' antes de phase='chunk'.\");\n}\nconst rows = JSON.parse(src);\nconst body = $('Webhook').first().json.body || {};\nconst skuOffset = Math.max(0, parseInt(body.skuOffset, 10) || 0);\nconst skuLimit = Math.max(1, parseInt(body.skuLimit, 10) || 30);\nreturn [{ json: { rows, skuOffset, skuLimit, totalSkus: rows.length } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12672,
+        6928
+      ],
+      "id": "c5287325-12bf-4a4f-ac33-e50912dffbd0",
+      "name": "Prep Chunk Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparação Sazonal — inline (chunked).\nconst WINDOW_OFFSET = 2;\nconst FORECAST_LENGTH = 3;\nconst MIN_HISTORY_MONTHS = 2;\n\nconst input = $input.first().json || {};\nconst rowsAll = Array.isArray(input.rows) ? input.rows : [];\nconst skuOffset = Number.isFinite(Number(input.skuOffset)) ? Math.max(0, parseInt(input.skuOffset, 10)) : 0;\nconst skuLimitRaw = Number.isFinite(Number(input.skuLimit)) ? parseInt(input.skuLimit, 10) : 0;\nconst skuLimit = skuLimitRaw > 0 ? skuLimitRaw : 0;\nconst totalSkusInput = Number.isFinite(Number(input.totalSkus)) ? parseInt(input.totalSkus, 10) : rowsAll.length;\n\nconst skuItems = skuLimit > 0 ? rowsAll.slice(skuOffset, skuOffset + skuLimit) : rowsAll.slice(skuOffset);\n\nconst now = new Date();\nconst currentYear = now.getFullYear();\nconst currentMonth = now.getMonth() + 1;\nconst prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;\nconst prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;\nconst prevKey = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;\n\nconst forecastTargets = [];\nfor (let i = 0; i < FORECAST_LENGTH; i++) {\n  let m = currentMonth + i, y = currentYear;\n  while (m > 12) { m -= 12; y++; }\n  forecastTargets.push({ year: y, month: m });\n}\n\nconst allMonthsPresent = new Set();\nlet maxYearGlobal = 0, maxMonthGlobal = 0;\nfor (const sku of rowsAll) {\n  for (const key of Object.keys(sku)) {\n    const m = key.match(/^(\\d{4})-(\\d{2})$/);\n    if (!m) continue;\n    const v = sku[key];\n    if (v == null || v === '' || isNaN(Number(v))) continue;\n    allMonthsPresent.add(key);\n    const y = parseInt(m[1], 10), mm = parseInt(m[2], 10);\n    if (y > maxYearGlobal || (y === maxYearGlobal && mm > maxMonthGlobal)) { maxYearGlobal = y; maxMonthGlobal = mm; }\n  }\n}\nfunction listMissingBetween(fromY, fromM, toY, toM) {\n  const out = [];\n  let y = fromY, m = fromM + 1;\n  while (m > 12) { m -= 12; y++; }\n  while (y < toY || (y === toY && m <= toM)) {\n    out.push(`${y}-${String(m).padStart(2, '0')}`);\n    m++; if (m > 12) { m = 1; y++; }\n  }\n  return out;\n}\nlet missingPreviousMonth = false, missingMonths = [];\nif (!allMonthsPresent.has(prevKey)) {\n  missingPreviousMonth = true;\n  missingMonths = maxYearGlobal > 0 ? listMissingBetween(maxYearGlobal, maxMonthGlobal, prevYear, prevMonth) : [prevKey];\n}\n\nconst results = [];\nfor (const sku of skuItems) {\n  const salesByYearMonth = {};\n  const allYears = new Set();\n  const monthsForSku = [];\n  for (const key of Object.keys(sku)) {\n    const match = key.match(/^(\\d{4})-(\\d{2})$/);\n    if (!match) continue;\n    const v = sku[key];\n    if (v == null || v === '' || isNaN(Number(v))) continue;\n    const year = parseInt(match[1], 10), month = parseInt(match[2], 10);\n    allYears.add(year);\n    if (!salesByYearMonth[year]) salesByYearMonth[year] = {};\n    salesByYearMonth[year][month] = Number(v);\n    monthsForSku.push(key);\n  }\n  monthsForSku.sort();\n  const sortedYears = [...allYears].sort((a, b) => a - b);\n  const historyMonthsAvailable = monthsForSku.length;\n  const insufficientHistory = historyMonthsAvailable < MIN_HISTORY_MONTHS;\n  const monthsMissingForMin = Math.max(0, MIN_HISTORY_MONTHS - historyMonthsAvailable);\n  const seasonalWindows = {};\n  for (const target of forecastTargets) {\n    const targetKey = `${target.year}-${String(target.month).padStart(2, '0')}`;\n    const windowMonths = [];\n    for (let off = -WINDOW_OFFSET; off <= WINDOW_OFFSET; off++) {\n      let wm = target.month + off;\n      if (wm < 1) wm += 12;\n      if (wm > 12) wm -= 12;\n      windowMonths.push(wm);\n    }\n    const historicalYears = sortedYears.filter((y) => y < target.year);\n    const historicalData = {};\n    for (const year of historicalYears) {\n      const yearData = {};\n      for (const wm of windowMonths) {\n        const wmKey = `${year}-${String(wm).padStart(2, '0')}`;\n        if (salesByYearMonth[year] && salesByYearMonth[year][wm] !== undefined) yearData[wmKey] = salesByYearMonth[year][wm];\n      }\n      if (Object.keys(yearData).length > 0) historicalData[year] = yearData;\n    }\n    const targetMonthValues = [];\n    for (const year of historicalYears) {\n      if (salesByYearMonth[year] && salesByYearMonth[year][target.month] !== undefined) targetMonthValues.push({ year, value: salesByYearMonth[year][target.month] });\n    }\n    // historicalContext: para cada ano histórico do mês-alvo, monta\n    // {year, actual, recent[3 prev], forecastStat} usado pela calibração v2.\n    const historicalContext = [];\n    for (const entry of targetMonthValues) {\n      const yr = entry.year;\n      const recent = [];\n      let cy = yr, cm = target.month - 1;\n      if (cm < 1) { cm = 12; cy--; }\n      for (let i = 0; i < 3; i++) {\n        if (salesByYearMonth[cy] && salesByYearMonth[cy][cm] !== undefined) {\n          recent.push(salesByYearMonth[cy][cm]);\n        }\n        cm--; if (cm < 1) { cm = 12; cy--; }\n      }\n      const priorVals = targetMonthValues.filter((e) => e.year < yr).map((e) => e.value);\n      const forecastStat = priorVals.length\n        ? priorVals.reduce((a, b) => a + b, 0) / priorVals.length\n        : entry.value;\n      if (recent.length) {\n        historicalContext.push({ year: yr, actual: entry.value, recent, forecastStat: parseFloat(forecastStat.toFixed(3)) });\n      }\n    }\n    const recentMonths = [];\n    let ry = target.year, rm = target.month - 1;\n    if (rm < 1) { rm = 12; ry--; }\n    for (let i = 0; i < 6; i++) {\n      if (salesByYearMonth[ry] && salesByYearMonth[ry][rm] !== undefined) recentMonths.push({ key: `${ry}-${String(rm).padStart(2, '0')}`, value: salesByYearMonth[ry][rm] });\n      rm--; if (rm < 1) { rm = 12; ry--; }\n    }\n    const values = targetMonthValues.map((v) => v.value);\n    const n = values.length;\n    const mean = n > 0 ? values.reduce((a, b) => a + b, 0) / n : 0;\n    const variance = n > 1 ? values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / (n - 1) : 0;\n    const stdDev = Math.sqrt(variance);\n    const allWindowValues = [];\n    for (const year of historicalYears) for (const wm of windowMonths) if (salesByYearMonth[year] && salesByYearMonth[year][wm] !== undefined) allWindowValues.push(salesByYearMonth[year][wm]);\n    const windowN = allWindowValues.length;\n    const windowMean = windowN > 0 ? allWindowValues.reduce((a, b) => a + b, 0) / windowN : 0;\n    const windowVariance = windowN > 1 ? allWindowValues.reduce((s, v) => s + Math.pow(v - windowMean, 2), 0) / (windowN - 1) : 0;\n    const windowStdDev = Math.sqrt(windowVariance);\n    seasonalWindows[targetKey] = {\n      windowMonths: windowMonths.map((m) => String(m).padStart(2, '0')),\n      historicalYears, historicalData,\n      targetMonthHistory: targetMonthValues,\n      historicalContext,\n      recentMonths,\n      statistics: {\n        mean: parseFloat(mean.toFixed(3)), stdDev: parseFloat(stdDev.toFixed(3)),\n        confidenceInterval: { lower: parseFloat(Math.max(0, mean - stdDev).toFixed(3)), upper: parseFloat((mean + stdDev).toFixed(3)) },\n        sampleSize: n,\n      },\n      windowStatistics: { mean: parseFloat(windowMean.toFixed(3)), stdDev: parseFloat(windowStdDev.toFixed(3)), sampleSize: windowN },\n    };\n  }\n  results.push({\n    SKU: sku.SKU, 'Descrição': sku['Descrição'], Formato: sku.Formato,\n    dataReferencia: now.toISOString().split('T')[0],\n    historyMonthsAvailable, insufficientHistory, monthsMissingForMin, seasonalWindows,\n  });\n}\n\nreturn [{ json: {\n  analysis: results,\n  forecastTargets: forecastTargets.map(t => `${t.year}-${String(t.month).padStart(2, '0')}`),\n  validation: {\n    missingPreviousMonth,\n    expectedPreviousMonth: prevKey,\n    missingMonths,\n    lastHistoryMonth: maxYearGlobal > 0 ? `${maxYearGlobal}-${String(maxMonthGlobal).padStart(2, '0')}` : null,\n    minHistoryMonths: MIN_HISTORY_MONTHS,\n  },\n  totalSkus: totalSkusInput, skuOffset, skuLimit,\n} }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12880,
+        6928
+      ],
+      "id": "86b50cf5-426b-48f0-9bb3-3aa4c9c1d945",
+      "name": "Inline Prep Sazonal"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// Heurística Determinística Sazonal — JS port (sem runner Python).\n// Reescrito 1:1 do Python original. Roda inline no worker do n8n.\n// =============================================================================\n\nfunction _mean(vals) {\n  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;\n}\nfunction _popStd(vals) {\n  if (vals.length < 2) return 0;\n  const m = _mean(vals);\n  return Math.sqrt(vals.reduce((s, v) => s + (v - m) ** 2, 0) / vals.length);\n}\nfunction _recencyWeights(n) {\n  if (n <= 0) return [];\n  if (n === 1) return [4.0];\n  if (n === 2) return [2.0, 4.0];\n  if (n === 3) return [2.0, 2.0, 4.0];\n  return [1.0, ...Array(n - 2).fill(2.0), 4.0];\n}\nfunction _weightedMean(vals, weights) {\n  const tw = weights.reduce((a, b) => a + b, 0);\n  if (tw === 0) return _mean(vals);\n  let s = 0;\n  for (let i = 0; i < vals.length; i++) s += vals[i] * weights[i];\n  return s / tw;\n}\nfunction _ols(xs, ys) {\n  const n = xs.length;\n  if (n < 2) return [_mean(ys), 0];\n  const mx = _mean(xs), my = _mean(ys);\n  let num = 0, den = 0;\n  for (let i = 0; i < n; i++) {\n    num += (xs[i] - mx) * (ys[i] - my);\n    den += (xs[i] - mx) ** 2;\n  }\n  if (Math.abs(den) < 1e-12) return [my, 0];\n  const b = num / den;\n  return [my - b * mx, b];\n}\nfunction _judgeHeuristic(values, trendBlend) {\n  if (trendBlend == null) trendBlend = 0.7;\n  const n = values.length;\n  if (n === 0) return 0;\n  if (n === 1) return values[0];\n  const wAvg = _weightedMean(values, _recencyWeights(n));\n  const ratios = [];\n  for (let i = 0; i < n - 1; i++) if (values[i] > 0) ratios.push(values[i + 1] / values[i]);\n  let trendRatio;\n  if (ratios.length >= 2) trendRatio = 0.3 * ratios[0] + 0.7 * ratios[ratios.length - 1];\n  else if (ratios.length) trendRatio = ratios[0];\n  else trendRatio = 1.0;\n  const trendForecast = Math.max(0, values[n - 1] * trendRatio);\n  const histMean = _mean(values);\n  const cv = histMean > 0 ? _popStd(values) / histMean : 0;\n  const cvFactor = Math.min(cv, 1.0);\n  let adaptive = trendBlend * (1.0 - cvFactor * 0.6);\n  if (histMean > 0 && values[n - 1] / histMean < 0.3) adaptive *= 0.3;\n  const anchor = cvFactor * histMean + (1.0 - cvFactor) * wAvg;\n  return Math.max(0, adaptive * trendForecast + (1.0 - adaptive) * anchor);\n}\nfunction _judgeSes(values) {\n  const n = values.length;\n  if (n === 0) return 0;\n  if (n === 1) return values[0];\n  let bestError = Infinity, bestLevel = values[n - 1];\n  for (let aX10 = 1; aX10 < 10; aX10++) {\n    const alpha = aX10 / 10.0;\n    let level = values[0], error = 0;\n    for (let i = 1; i < n; i++) {\n      error += (values[i] - level) ** 2;\n      level = alpha * values[i] + (1 - alpha) * level;\n    }\n    if (error < bestError) { bestError = error; bestLevel = level; }\n  }\n  return Math.max(0, bestLevel);\n}\nfunction _judgeWindowTrend(values, years, histData) {\n  const n = values.length;\n  if (n === 0) return 0;\n  if (n === 1) return values[0];\n  const windowMeans = [], validYears = [];\n  for (const yr of years) {\n    const yk = String(yr);\n    if (histData[yk]) {\n      const wv = Object.values(histData[yk]);\n      if (wv.length) { windowMeans.push(_mean(wv)); validYears.push(yr); }\n    }\n  }\n  if (windowMeans.length < 2) return Math.max(0, _weightedMean(values, _recencyWeights(n)));\n  const forecastYear = Math.max(...years) + 1;\n  const [a, b] = _ols(validYears, windowMeans);\n  const predictedWindowMean = a + b * forecastYear;\n  const seasonalRatios = [];\n  for (let i = 0; i < years.length; i++) {\n    const yk = String(years[i]);\n    if (histData[yk]) {\n      const wv = Object.values(histData[yk]);\n      const wm = _mean(wv);\n      if (wm > 0) seasonalRatios.push(values[i] / wm);\n    }\n  }\n  const seasonalRatio = seasonalRatios.length\n    ? _weightedMean(seasonalRatios, _recencyWeights(seasonalRatios.length))\n    : 1.0;\n  const result = predictedWindowMean * seasonalRatio;\n  if (result <= 0) return Math.max(0, _weightedMean(values, _recencyWeights(n)));\n  return Math.max(0, result);\n}\nfunction _backtestWeights(values, years, histData) {\n  const n = values.length;\n  if (n < 3) return [1 / 3, 1 / 3, 1 / 3];\n  const trainVals = values.slice(0, -1);\n  const trainYears = years.slice(0, -1);\n  const actual = values[n - 1];\n  const lastYearKey = String(years[n - 1]);\n  const trainHist = {};\n  for (const k of Object.keys(histData)) if (k !== lastYearKey) trainHist[k] = histData[k];\n  const preds = [\n    _judgeHeuristic(trainVals),\n    _judgeSes(trainVals),\n    _judgeWindowTrend(trainVals, trainYears, trainHist),\n  ];\n  const errors = preds.map((p) => Math.abs(actual - p));\n  const epsilon = Math.max(1.0, actual * 0.05);\n  const invErrors = errors.map((e) => 1.0 / (e + epsilon));\n  const total = invErrors.reduce((a, b) => a + b, 0);\n  return invErrors.map((w) => w / total);\n}\nfunction _forecastTarget(values, years, histData) {\n  const ph = _judgeHeuristic(values);\n  const ps = _judgeSes(values);\n  const pt = _judgeWindowTrend(values, years, histData);\n  const w = _backtestWeights(values, years, histData);\n  const prediction = ph * w[0] + ps * w[1] + pt * w[2];\n  return {\n    previsao: Math.max(0, parseFloat(prediction.toFixed(3))),\n    metodos: {\n      heuristica: parseFloat(ph.toFixed(3)),\n      suavizacaoExponencial: parseFloat(ps.toFixed(3)),\n      tendenciaSazonal: parseFloat(pt.toFixed(3)),\n    },\n    pesos: {\n      heuristica: parseFloat(w[0].toFixed(3)),\n      suavizacaoExponencial: parseFloat(w[1].toFixed(3)),\n      tendenciaSazonal: parseFloat(w[2].toFixed(3)),\n    },\n  };\n}\nfunction _confidenceLabel(sampleSize, cvFactor) {\n  if (sampleSize < 3) return 'baixa';\n  if (cvFactor > 0.5) return 'média';\n  return 'alta';\n}\nfunction _tolerancePct(values, prediction) {\n  if (!values.length || prediction <= 0) return 30.0;\n  const m = _mean(values);\n  if (m <= 0) return 30.0;\n  const cv = _popStd(values) / m;\n  let pct = parseFloat((cv * 100).toFixed(1));\n  if (pct < 10.0) pct = 10.0;\n  if (pct > 60.0) pct = 60.0;\n  return pct;\n}\nfunction _movingAverage3(window) {\n  const recent = window.recentMonths || [];\n  if (!recent.length) {\n    const tmh = window.targetMonthHistory || [];\n    return _mean(tmh.map((e) => e.value));\n  }\n  return _mean(recent.slice(0, 3).map((r) => r.value));\n}\nfunction seasonalForecast(skuData) {\n  const formato = (skuData.Formato || '').trim();\n  const formatoNorm = formato.toLowerCase();\n  const base = {\n    SKU: skuData.SKU,\n    'Descrição': skuData['Descrição'] || '',\n    Formato: formato,\n    dataReferencia: skuData.dataReferencia || '',\n    historyMonthsAvailable: skuData.historyMonthsAvailable || 0,\n    insufficientHistory: !!skuData.insufficientHistory,\n    monthsMissingForMin: skuData.monthsMissingForMin || 0,\n  };\n  const windows = skuData.seasonalWindows || {};\n  if (base.insufficientHistory) {\n    const previsoes = [];\n    for (const tm of Object.keys(windows).sort()) {\n      previsoes.push({\n        mes: tm, previsao: 0, tolerancePct: 0,\n        intervaloConfianca: { lower: 0, upper: 0 },\n        confianca: 'baixa', motivo: 'historico_insuficiente',\n        tipo: 'ensemble',\n      });\n    }\n    base.previsoes = previsoes;\n    return base;\n  }\n  const previsoes = [];\n  const isComprados = formatoNorm === 'comprados';\n  const isSgb = formatoNorm === 'sgb';\n  for (const tm of Object.keys(windows).sort()) {\n    const w = windows[tm];\n    const targetHistory = w.targetMonthHistory || [];\n    const stats = w.statistics || {};\n    const histData = w.historicalData || {};\n    const values = targetHistory.map((e) => e.value);\n    const years = targetHistory.map((e) => e.year);\n    const histMean = values.length ? _mean(values) : 0;\n    const cv = histMean > 0 ? _popStd(values) / histMean : 0;\n    const cvFactor = Math.min(cv, 1.0);\n    if (isComprados) {\n      const previsao = parseFloat(Math.max(0, _movingAverage3(w)).toFixed(3));\n      const recentVals = (w.recentMonths || []).slice(0, 3).map((r) => r.value);\n      const tol = _tolerancePct(recentVals, previsao);\n      previsoes.push({\n        mes: tm, previsao, tolerancePct: tol,\n        intervaloConfianca: {\n          lower: parseFloat(Math.max(0, previsao * (1 - tol / 100)).toFixed(3)),\n          upper: parseFloat((previsao * (1 + tol / 100)).toFixed(3)),\n        },\n        confianca: _confidenceLabel(recentVals.length, cvFactor),\n        tipo: 'comprados_sma3',\n        metodos: { mediaMovel3: previsao },\n        pesos: { mediaMovel3: 1.0 },\n      });\n      continue;\n    }\n    if (!values.length) {\n      previsoes.push({\n        mes: tm, previsao: 0, tolerancePct: 0,\n        intervaloConfianca: { lower: 0, upper: 0 },\n        confianca: 'baixa',\n        tipo: isSgb ? 'sgb' : 'ensemble',\n        motivo: 'sem_historico_no_mes_alvo',\n      });\n      continue;\n    }\n    const fc = _forecastTarget(values, years, histData);\n    const tol = _tolerancePct(values, fc.previsao);\n    // === v2 — Calibração por SKU (assimétrica leve, anti-sobra) ===\n    // Grid-search 2D em (wRecent, biasFactor) usando histórico do próprio SKU.\n    //\n    // Penalidade ASSIMÉTRICA LEVE: sobrar custa 1.25× o de faltar.\n    // (1.6× foi excessivo: 62% dos SKUs acabaram com viés ⬇ e v2 piorou em\n    // mais SKUs do que melhorou.)\n    //\n    // - wRecent: peso da média recente (0..1, passo 0.05).\n    // - biasFactor: viés multiplicativo final, GRID SIMÉTRICO em torno de 1.\n    //   Usado SOMENTE quando há ≥3 amostras de histórico (evita overfit).\n    //   Com 2 amostras: bias forçado em 1.00.\n    //\n    // Soft-cap final: SKUs com sobreprevisão crônica (≥75%) onde a previsão\n    // ainda fica >40% acima do nível recente são capados em 1.25× recente.\n    const _recentVals = (w.recentMonths || []).slice(0, 3).map((r) => r.value);\n    const _recentLevel = _recentVals.length ? _mean(_recentVals) : null;\n    const _histCtx = w.historicalContext || [];\n    const _wGrid = [];\n    for (let i = 0; i <= 20; i++) _wGrid.push(parseFloat((i / 20).toFixed(2))); // 0..1 step 0.05\n    // bias só ativado com histórico suficiente (≥3 amostras)\n    const _bGrid = _histCtx.length >= 3\n      ? [0.92, 0.96, 1.00, 1.04, 1.08]   // simétrico\n      : [1.00];\n    const _UNDER_PENALTY = 1.0;   // faltar (tolerável)\n    const _OVER_PENALTY = 1.25;   // sobrar (um pouco pior, mas sem exagero)\n    let _wBest = null, _bBest = null, _wBestErr = null;\n    let _overshootRate = 0;\n    if (_histCtx.length >= 2) {\n      // Diagnóstico: % de vezes que forecastStat sobrou vs actual.\n      const overs = _histCtx.filter((c) => c.forecastStat > c.actual).length;\n      _overshootRate = overs / _histCtx.length;\n      let bestErr = Infinity;\n      for (const wc of _wGrid) {\n        for (const bc of _bGrid) {\n          let sumErr = 0;\n          for (const ctx of _histCtx) {\n            const recMean = ctx.recent.length\n              ? ctx.recent.reduce((a, b) => a + b, 0) / ctx.recent.length\n              : ctx.forecastStat;\n            const blend = (1 - wc) * ctx.forecastStat + wc * recMean;\n            const pred = blend * bc;\n            const diff = ctx.actual - pred;\n            if (diff > 0) sumErr += diff * _UNDER_PENALTY;   // faltou\n            else sumErr += (-diff) * _OVER_PENALTY;          // sobrou\n          }\n          if (sumErr < bestErr) { bestErr = sumErr; _wBest = wc; _bBest = bc; _wBestErr = sumErr; }\n        }\n      }\n    }\n    // Sem contexto suficiente: v2 = v1 (sem damping nem viés).\n    const _wRecentSku = _wBest != null ? _wBest : 0;\n    let _biasSku = _bBest != null ? _bBest : 1.0;\n    // Anti-amplify: se o nível recente já é um pico (>= 2× histMean do mês\n    // alvo) E o LOO escolheu wRecent alto E bias > 1, neutraliza o bias.\n    // Multiplicar pico por bias>1 é overfit ao último mês anômalo.\n    let _antiAmplify = false;\n    if (_recentLevel != null && histMean > 0 && _recentLevel >= 2 * histMean && _wRecentSku >= 0.5 && _biasSku > 1.0) {\n      _biasSku = 1.0;\n      _antiAmplify = true;\n    }\n    let _previsaoV2 = fc.previsao;\n    let _capApplied = false;\n    if (_recentLevel != null && (_wRecentSku > 0 || _biasSku !== 1.0)) {\n      const blend = (1 - _wRecentSku) * fc.previsao + _wRecentSku * _recentLevel;\n      _previsaoV2 = blend * _biasSku;\n    }\n    // Soft-cap de overshoot: limite físico contra previsões absurdas em SKUs\n    // historicamente sobreestimados. Critério mais restritivo que antes para\n    // não sufocar SKUs em crescimento real.\n    if (_recentLevel != null && _overshootRate >= 0.75 && _previsaoV2 > 1.40 * _recentLevel) {\n      _previsaoV2 = 1.25 * _recentLevel;\n      _capApplied = true;\n    }\n    // === Inteligência data-driven multi-sinal ===\n    // Três mecanismos combinados, todos derivados do próprio SKU:\n    //\n    //  1) REGIME DETECTION: detecta colapso/boom comparando a razão atual\n    //     recentLevel/histTargetMean contra a distribuição de razões\n    //     históricas (recent/forecastStat dos folds). Se a razão atual é\n    //     outlier-baixa (Tukey), pull v2 em direção a recentLevel com peso\n    //     proporcional à distância em IQRs.\n    //\n    //  2) RATIO FENCE: máximo plausível = recentLevel × maxRatio onde\n    //     maxRatio é o maior actual/recentMean já observado nos folds (com\n    //     20%% de folga). Se v2 ultrapassa, shrink logístico.\n    //\n    //  3) RECENT-WINDOW TUKEY FENCE: Q1/Q3/IQR sobre as ÚLTIMAS 12\n    //     observações mensais (regime atual), não toda a história. SKUs em\n    //     declínio têm fence apertado; SKUs estáveis têm fence largo.\n    //\n    // Cap superior final = min dos caps disponíveis. Cap inferior simétrico.\n    const _q = (arr, p) => {\n      const idx = (arr.length - 1) * p;\n      const lo = Math.floor(idx), hi = Math.ceil(idx);\n      return lo === hi ? arr[lo] : arr[lo] + (arr[hi] - arr[lo]) * (idx - lo);\n    };\n    // ---- Coleta observações DATADAS (ym, value), dedup, ordena desc ----\n    const _tmMonth = tm.split('-')[1];\n    const _obsMap = new Map();\n    for (const yk of Object.keys(histData)) {\n      for (const [mk, v] of Object.entries(histData[yk])) {\n        if (typeof v === 'number' && !isNaN(v)) _obsMap.set(mk, v);\n      }\n    }\n    for (let i = 0; i < years.length; i++) {\n      if (typeof values[i] === 'number' && !isNaN(values[i])) {\n        _obsMap.set(`${years[i]}-${_tmMonth}`, values[i]);\n      }\n    }\n    for (const r of (w.recentMonths || [])) {\n      if (typeof r.value === 'number' && !isNaN(r.value)) _obsMap.set(r.key, r.value);\n    }\n    const _obsSorted = [..._obsMap.entries()].sort((a, b) => b[0].localeCompare(a[0]));\n    const _recentValues = _obsSorted.slice(0, 12).map((e) => e[1]).sort((a, b) => a - b);\n    const _allValues = _obsSorted.map((e) => e[1]).sort((a, b) => a - b);\n    // ---- (1) REGIME DETECTION via Tukey sobre razões históricas ----\n    let _regimeShift = null;\n    let _regimeRatio = null;\n    const _histRatios = _histCtx\n      .filter((c) => c.forecastStat > 0 && c.recent.length)\n      .map((c) => (c.recent.reduce((a, b) => a + b, 0) / c.recent.length) / c.forecastStat);\n    const _histTargetMean = values.length ? _mean(values) : null;\n    if (_histRatios.length >= 2 && _recentLevel != null && _histTargetMean != null && _histTargetMean > 0) {\n      const _rs = [..._histRatios].sort((a, b) => a - b);\n      const currentRatio = _recentLevel / _histTargetMean;\n      _regimeRatio = parseFloat(currentRatio.toFixed(3));\n      // Sinal A — Tukey 1.5·IQR (estatística clássica). Funciona quando os\n      // ratios históricos são razoavelmente simétricos.\n      let _tukeyHit = null;\n      if (_rs.length >= 3) {\n        const rq1 = _q(_rs, 0.25);\n        const rq3 = _q(_rs, 0.75);\n        const riqr = rq3 - rq1;\n        const rLower = rq1 - 1.5 * riqr;\n        const rUpper = rq3 + 1.5 * riqr;\n        if (riqr > 0 && currentRatio < rLower) {\n          const breachIqr = (rLower - currentRatio) / riqr;\n          _tukeyHit = { direction: 'collapse', fenceRatio: rLower, pullW: Math.min(0.8, breachIqr / (breachIqr + 1.0)) };\n        } else if (riqr > 0 && currentRatio > rUpper) {\n          const breachIqr = (currentRatio - rUpper) / riqr;\n          _tukeyHit = { direction: 'boom', fenceRatio: rUpper, pullW: Math.min(0.5, breachIqr / (breachIqr + 1.5)) };\n        }\n      }\n      // Sinal B — Empirical bounds. Se currentRatio está abaixo do MENOR\n      // ratio jamais observado neste SKU (com folga 10%), é colapso fora\n      // da experiência. Robusto a outliers altos que inflam o IQR Tukey.\n      const minHist = _rs[0];\n      const maxHist = _rs[_rs.length - 1];\n      let _empHit = null;\n      if (currentRatio < minHist * 0.9 && minHist > 0) {\n        const breach = (minHist - currentRatio) / minHist;\n        _empHit = { direction: 'collapse', fenceRatio: minHist, pullW: Math.min(0.6, Math.max(0.4, breach)) };\n      } else if (currentRatio > maxHist * 1.1 && maxHist > 0) {\n        const breach = (currentRatio - maxHist) / maxHist;\n        _empHit = { direction: 'boom', fenceRatio: maxHist, pullW: Math.min(0.6, Math.max(0.3, breach * 0.5)) };\n      }\n      // Combinação: usa o sinal mais forte (maior pullW). Se ambos sinais\n      // concordam, vence o de maior pull. Se discordam, empirical vence —\n      // Tukey pode estar contaminado por outlier alto.\n      const _hit = (_empHit && _tukeyHit)\n        ? (_empHit.pullW >= _tukeyHit.pullW ? _empHit : _tukeyHit)\n        : (_empHit || _tukeyHit);\n      if (_hit) {\n        _previsaoV2 = (1 - _hit.pullW) * _previsaoV2 + _hit.pullW * _recentLevel;\n        // Piso anti-colapso-catastrófico: em collapse, não cair abaixo de\n        // 50% da previsão estatística original (fc.previsao). Evita casos onde\n        // pullW alto + recentLevel muito baixo levam v2 a praticamente zero\n        // num SKU que de fato voltou a vender.\n        if (_hit.direction === 'collapse' && _previsaoV2 < fc.previsao * 0.5) {\n          _previsaoV2 = fc.previsao * 0.5;\n        }\n        _regimeShift = {\n          direction: _hit.direction,\n          currentRatio: _regimeRatio,\n          fenceRatio: parseFloat(_hit.fenceRatio.toFixed(3)),\n          pullWeight: parseFloat(_hit.pullW.toFixed(3)),\n          source: _hit === _empHit ? 'empirical' : 'tukey',\n        };\n      }\n    }\n    // ---- (2) RATIO FENCE: cap = recentLevel × maxHistRatio × 1.2 ----\n    let _ratioUpper = null, _ratioLower = null;\n    const _actualRatios = _histCtx\n      .filter((c) => c.recent.length && (c.recent.reduce((a, b) => a + b, 0) / c.recent.length) > 0)\n      .map((c) => c.actual / (c.recent.reduce((a, b) => a + b, 0) / c.recent.length));\n    if (_actualRatios.length >= 2 && _recentLevel != null && _recentLevel > 0) {\n      const rmax = Math.max(..._actualRatios);\n      const rmin = Math.min(..._actualRatios.filter((x) => x > 0));\n      _ratioUpper = _recentLevel * rmax * 1.2;\n      _ratioLower = isFinite(rmin) ? _recentLevel * rmin * 0.8 : null;\n    }\n    // ---- (3) RECENT-WINDOW TUKEY (últimas 12 obs) ----\n    let _tukeyUpper = null, _tukeyLower = null, _tukeyMedian = null, _tukeyIqr = null;\n    if (_recentValues.length >= 4) {\n      const q1 = _q(_recentValues, 0.25);\n      const q3 = _q(_recentValues, 0.75);\n      _tukeyMedian = _q(_recentValues, 0.5);\n      _tukeyIqr = q3 - q1;\n      if (_tukeyIqr > 0) {\n        _tukeyUpper = q3 + 1.5 * _tukeyIqr;\n        _tukeyLower = Math.max(0, q1 - 1.5 * _tukeyIqr);\n      }\n    }\n    // ---- Combinação: cap = min disponível (mais restritivo) ----\n    const _upperCandidates = [_ratioUpper, _tukeyUpper].filter((x) => x != null && isFinite(x) && x > 0);\n    const _lowerCandidates = [_ratioLower, _tukeyLower].filter((x) => x != null && isFinite(x) && x > 0);\n    const _finalUpper = _upperCandidates.length ? Math.min(..._upperCandidates) : null;\n    const _finalLower = _lowerCandidates.length ? Math.max(..._lowerCandidates) : null;\n    let _fenceApplied = false;\n    let _fenceInfo = null;\n    if (_finalUpper != null && _previsaoV2 > _finalUpper) {\n      const overshoot = _previsaoV2 / _finalUpper;\n      const shrinkW = (overshoot - 1) / (overshoot - 1 + 0.5);\n      _previsaoV2 = (1 - shrinkW) * _previsaoV2 + shrinkW * _finalUpper;\n      _fenceApplied = true;\n      _fenceInfo = {\n        direction: 'down',\n        fence: parseFloat(_finalUpper.toFixed(3)),\n        ratioCap: _ratioUpper != null ? parseFloat(_ratioUpper.toFixed(3)) : null,\n        tukeyCap: _tukeyUpper != null ? parseFloat(_tukeyUpper.toFixed(3)) : null,\n        recentLevel: _recentLevel != null ? parseFloat(_recentLevel.toFixed(3)) : null,\n        shrinkWeight: parseFloat(shrinkW.toFixed(3)),\n      };\n    } else if (_finalLower != null && _previsaoV2 < _finalLower && _previsaoV2 > 0) {\n      const undershoot = _finalLower / _previsaoV2;\n      const shrinkW = (undershoot - 1) / (undershoot - 1 + 0.5);\n      _previsaoV2 = (1 - shrinkW) * _previsaoV2 + shrinkW * _finalLower;\n      _fenceApplied = true;\n      _fenceInfo = {\n        direction: 'up',\n        fence: parseFloat(_finalLower.toFixed(3)),\n        ratioCap: _ratioLower != null ? parseFloat(_ratioLower.toFixed(3)) : null,\n        tukeyCap: _tukeyLower != null ? parseFloat(_tukeyLower.toFixed(3)) : null,\n        recentLevel: _recentLevel != null ? parseFloat(_recentLevel.toFixed(3)) : null,\n        shrinkWeight: parseFloat(shrinkW.toFixed(3)),\n      };\n    }\n    // === SELETOR LOO v1 vs v2 (do-no-harm SEM thresholds) ===\n    // Em vez de \"v2 só vence se for X% melhor\" ou \"reverte se moveu na\n    // direção errada\", deixamos o próprio histórico do SKU decidir via\n    // leave-one-out cross-validation. Para cada fold k:\n    //   - treina (w*, b*) nos folds ≠ k (mesma loss assimétrica)\n    //   - prevê o fold k com v1 (forecastStat) e v2 ((1-w*)·fs + w*·rec)·b*\n    //   - acumula erro asymétrico de cada um\n    // Vencedor (menor erro acumulado) ganha o SKU. Sem thresholds.\n    //\n    // Se v1 vence, descarta tudo que v2 fez (calibração + soft-cap + regime\n    // + fence) e devolve fc.previsao. Caso contrário mantém _previsaoV2.\n    let _looErrV1 = null, _looErrV2 = null;\n    let _selector = 'v2';\n    if (_histCtx.length >= 3) {\n      let eV1 = 0, eV2 = 0;\n      for (let k = 0; k < _histCtx.length; k++) {\n        const train = _histCtx.filter((_, i) => i !== k);\n        const test = _histCtx[k];\n        let bw = 0, bb = 1.0, be = Infinity;\n        for (const wc of _wGrid) {\n          for (const bc of _bGrid) {\n            let s = 0;\n            for (const ctx of train) {\n              const rm = ctx.recent.length\n                ? ctx.recent.reduce((a, b) => a + b, 0) / ctx.recent.length\n                : ctx.forecastStat;\n              const pr = ((1 - wc) * ctx.forecastStat + wc * rm) * bc;\n              const d = ctx.actual - pr;\n              s += d > 0 ? d * _UNDER_PENALTY : (-d) * _OVER_PENALTY;\n            }\n            if (s < be) { be = s; bw = wc; bb = bc; }\n          }\n        }\n        const tRm = test.recent.length\n          ? test.recent.reduce((a, b) => a + b, 0) / test.recent.length\n          : test.forecastStat;\n        const v1Pred = test.forecastStat;\n        const v2Pred = ((1 - bw) * test.forecastStat + bw * tRm) * bb;\n        const d1 = test.actual - v1Pred;\n        const d2 = test.actual - v2Pred;\n        eV1 += d1 > 0 ? d1 * _UNDER_PENALTY : (-d1) * _OVER_PENALTY;\n        eV2 += d2 > 0 ? d2 * _UNDER_PENALTY : (-d2) * _OVER_PENALTY;\n      }\n      _looErrV1 = parseFloat(eV1.toFixed(3));\n      _looErrV2 = parseFloat(eV2.toFixed(3));\n      // v1 só vence se for ≥5% melhor (tie-break pró-v2).\n      if (eV1 < eV2 * 0.95) _selector = 'v1';\n    }\n    // === INSTRUMENTAÇÃO (contrafactual sem viés de seleção) ===\n    // Snapshot dos DOIS candidatos para os MESMOS SKU-mês, ANTES de o\n    // seletor escolher. Não altera previsao escolhida — só registra.\n    //   predV1     = v1 puro (forecastStat / ensemble base)\n    //   predV2Full = pipeline v2 completo (calibração + soft-cap + regime +\n    //                fence), ignorando a decisão do seletor.\n    const _predV1 = parseFloat(Math.max(0, fc.previsao).toFixed(3));\n    const _predV2Full = parseFloat(Math.max(0, _previsaoV2).toFixed(3));\n    if (_selector === 'v1' && !_regimeShift) {\n      // Descarta todo o pipeline v2 — o próprio SKU mostrou que v1 é melhor\n      // historicamente E não há sinal de mudança de regime AGORA.\n      _previsaoV2 = fc.previsao;\n      _capApplied = false;\n      _fenceApplied = false;\n      _fenceInfo = null;\n      // Momentum check: LOO julga só passado. Se o recente atual difere\n      // muito de fc.previsao (>30%), aplica shrink leve em direção ao\n      // recente — captura crescimento/queda que o histórico não viu.\n      if (_recentLevel != null && fc.previsao > 0) {\n        const ratio = _recentLevel / fc.previsao;\n        if (ratio > 1.3 || (ratio < 0.7 && _recentLevel > 0)) {\n          _previsaoV2 = 0.7 * fc.previsao + 0.3 * _recentLevel;\n          _selector = 'v1+momentum';\n        }\n      }\n    } else if (_selector === 'v1' && _regimeShift) {\n      // V1 venceu o LOO, mas há mudança de regime detectada AGORA. O LOO\n      // é cego pra isso porque só julga o passado: se o colapso/boom é\n      // recente, nenhum fold antigo o captura. Aplica regime shift sobre\n      // o v1 (em vez de descartar) — o sinal é estatístico (Tukey sobre\n      // razões históricas), não arbitrário.\n      const pullW = _regimeShift.pullWeight;\n      _previsaoV2 = (1 - pullW) * fc.previsao + pullW * _recentLevel;\n      // Mesmo piso anti-colapso-catastrófico aplicado no branch v2.\n      if (_regimeShift.direction === 'collapse' && _previsaoV2 < fc.previsao * 0.5) {\n        _previsaoV2 = fc.previsao * 0.5;\n      }\n      _capApplied = false;\n      _fenceApplied = false;\n      _fenceInfo = null;\n      _selector = 'v1+regime';\n    }\n    _previsaoV2 = Math.max(0, parseFloat(_previsaoV2.toFixed(3)));\n    previsoes.push({\n      mes: tm, previsao: _previsaoV2, tolerancePct: tol,\n      intervaloConfianca: {\n        lower: parseFloat(Math.max(0, _previsaoV2 * (1 - tol / 100)).toFixed(3)),\n        upper: parseFloat((_previsaoV2 * (1 + tol / 100)).toFixed(3)),\n      },\n      confianca: _confidenceLabel(stats.sampleSize || 0, cvFactor),\n      tipo: isSgb ? 'sgb' : 'ensemble',\n      metodos: fc.metodos, pesos: fc.pesos,\n      damping: {\n        wRecent: _wRecentSku,\n        biasFactor: _biasSku,\n        wRecentSamples: _histCtx.length,\n        wBestErr: _wBestErr != null ? parseFloat(_wBestErr.toFixed(3)) : null,\n        recentLevel: _recentLevel != null ? parseFloat(_recentLevel.toFixed(3)) : null,\n        lastReal: _recentVals[0] != null ? _recentVals[0] : null,\n        overshootRate: parseFloat(_overshootRate.toFixed(3)),\n        capApplied: _capApplied,\n        fenceApplied: _fenceApplied,\n        fenceInfo: _fenceInfo,\n        regimeShift: _regimeShift,\n        regimeRatio: _regimeRatio,\n        selector: _selector,\n        looErrV1: _looErrV1,\n        looErrV2: _looErrV2,\n        predV1: _predV1,\n        predV2Full: _predV2Full,\n        empSamples: _allValues.length,\n        recentSamples: _recentValues.length,\n        calibrated: _wBest != null,\n      },\n    });\n  }\n  base.previsoes = previsoes;\n  return base;\n}\n\n// ── n8n bridge ── (compatível com Predict v2 e Backtest v2)\nconst results = [];\nlet validation = null;\nlet forecastTargets = null;\nlet targetMonths = null;\nlet meta = { totalSkus: 0, skuOffset: 0, skuLimit: 0 };\nfor (const item of $input.all()) {\n  const d = item.json;\n  const skus = Array.isArray(d.analysis) ? d.analysis : [d];\n  if (!validation && d.validation) validation = d.validation;\n  if (!forecastTargets && d.forecastTargets) forecastTargets = d.forecastTargets;\n  if (!targetMonths && d.targetMonths) targetMonths = d.targetMonths;\n  for (const k of ['totalSkus', 'skuOffset', 'skuLimit']) {\n    if (k in d) meta[k] = d[k];\n  }\n  for (const sku of skus) {\n    const row = seasonalForecast(sku);\n    if (sku.backtestTarget != null) row.backtestTarget = sku.backtestTarget;\n    if ('realValue' in sku) row.realValue = sku.realValue;\n    if (validation != null) row._validation = validation;\n    if (forecastTargets != null) row._forecastTargets = forecastTargets;\n    if (targetMonths != null) row._targetMonths = targetMonths;\n    row._meta = meta;\n    results.push({ json: row });\n  }\n}\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13072,
+        6928
+      ],
+      "id": "7bc14939-568a-4c20-843b-f3f16693a1da",
+      "name": "Inline Heurística"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Result — inline. Achata para o formato que o front consome.\nconst results = [];\nlet validation = null, forecastTargets = null;\nlet meta = { totalSkus: 0, skuOffset: 0, skuLimit: 0 };\n\nfor (const item of $input.all()) {\n  const data = item.json || {};\n  if (!validation && data._validation) validation = data._validation;\n  if (!forecastTargets && data._forecastTargets) forecastTargets = data._forecastTargets;\n  if (data._meta) meta = data._meta;\n  if (data.__metaOnly) continue;\n\n  const row = {\n    SKU: data.SKU,\n    'Descrição': data['Descrição'],\n    Formato: data.Formato || '',\n    insufficientHistory: !!data.insufficientHistory,\n    historyMonthsAvailable: data.historyMonthsAvailable || 0,\n    monthsMissingForMin: data.monthsMissingForMin || 0,\n    detalhes: {},\n  };\n  for (const prev of data.previsoes || []) {\n    row[prev.mes] = prev.previsao;\n    row.detalhes[prev.mes] = {\n      previsao: prev.previsao,\n      tolerancePct: prev.tolerancePct,\n      intervaloConfianca: prev.intervaloConfianca,\n      confianca: prev.confianca,\n      tipo: prev.tipo,\n      motivo: prev.motivo || null,\n      damping: prev.damping || null,\n    };\n  }\n  results.push(row);\n}\n\nconst processedSkus = results.length;\nconst totalSkus = meta.totalSkus || 0;\nconst skuOffset = meta.skuOffset || 0;\nconst skuLimit = meta.skuLimit || 0;\nconst nextOffset = skuOffset + (skuLimit > 0 ? skuLimit : processedSkus);\nconst hasMore = totalSkus > 0 && nextOffset < totalSkus;\n\nreturn [{ json: { data: results, validation, forecastTargets, totalSkus, processedSkus, skuOffset, skuLimit, nextOffset, hasMore } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13264,
+        6928
+      ],
+      "id": "a8c59727-9ad5-4153-bb12-04f2aa20d266",
+      "name": "Inline Parse Result"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "agg",
+        "key": "predict-aggregate",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13088,
+        6928
+      ],
+      "id": "c9d50655-ead1-47ed-a223-3b42776c82a4",
+      "name": "Redis GET aggregate",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combina o slice processado inline no acumulador.\n// Lê o resultado direto de 'Inline Parse Result'.\nconst parsed = $('Inline Parse Result').all();\nconst predictResult = (parsed[0] && parsed[0].json) || {};\nconst aggRaw = $json.agg;\nlet current;\ntry {\n  if (typeof aggRaw === 'string') current = JSON.parse(aggRaw);\n  else if (Array.isArray(aggRaw)) current = aggRaw;\n  else current = [];\n  if (!Array.isArray(current)) current = [];\n} catch (e) { current = []; }\nconst sliceData = Array.isArray(predictResult.data) ? predictResult.data : [];\nconst combined = current.concat(sliceData);\n\nconst validation = predictResult.validation || null;\nconst forecastTargets = predictResult.forecastTargets || null;\n\nreturn [{\n  json: {\n    aggregate: JSON.stringify(combined),\n    validationStr: validation != null ? JSON.stringify(validation) : 'null',\n    targetsStr: forecastTargets != null ? JSON.stringify(forecastTargets) : 'null',\n    meta: {\n      totalSkus: predictResult.totalSkus || 0,\n      processedSkus: predictResult.processedSkus || 0,\n      processedSkusInSlice: sliceData.length,\n      currentBeforeMerge: current.length,\n      firstSliceSku: sliceData.length ? (sliceData[0].SKU || null) : null,\n      aggRawType: typeof aggRaw,\n      aggRawLen: typeof aggRaw === 'string' ? aggRaw.length : null,\n      skuOffset: predictResult.skuOffset || 0,\n      skuLimit: predictResult.skuLimit || 0,\n      nextOffset: predictResult.nextOffset || 0,\n      hasMore: !!predictResult.hasMore,\n      aggregatedTotal: combined.length,\n    },\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13312,
+        6928
+      ],
+      "id": "9430eb90-5194-4bf9-9b06-640c126537de",
+      "name": "Combine"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "predict-aggregate",
+        "value": "={{ $json.aggregate }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13520,
+        6928
+      ],
+      "id": "bc801436-1de0-40a4-a989-39270a043a5b",
+      "name": "Redis SET aggregate",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "predict-validation",
+        "value": "={{ $json.validationStr }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13728,
+        6928
+      ],
+      "id": "2b99369e-3271-4fa8-a8e7-7df996cc440a",
+      "name": "Redis SET validation",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "predict-targets",
+        "value": "={{ $json.targetsStr }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13936,
+        6928
+      ],
+      "id": "e50d8961-b1af-4cd7-af57-001852baed09",
+      "name": "Redis SET targets",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'chunk', ...$('Combine').first().json.meta } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        14144,
+        6928
+      ],
+      "id": "2733e833-2148-4507-818b-e08a7c6b95f8",
+      "name": "Respond Chunk"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "agg",
+        "key": "predict-aggregate",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        12464,
+        7248
+      ],
+      "id": "bba4d451-8a86-473e-84e0-82cc2ab5b382",
+      "name": "Redis GET aggregate (finalize)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "validation",
+        "key": "predict-validation",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        12672,
+        7248
+      ],
+      "id": "5419ec6d-e23e-47c5-a7a6-8a731499b00f",
+      "name": "Redis GET validation",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "targets",
+        "key": "predict-targets",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        12880,
+        7248
+      ],
+      "id": "e7c75375-d2a9-4898-b9ed-b952e0e5de77",
+      "name": "Redis GET targets",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monta o envelope final equivalente ao Save Response da v1.\n// IMPORTANTE: o nó Redis 'get' substitui o $json a cada chamada encadeada,\n// então lemos cada valor explicitamente do nó de origem.\nfunction readFromNode(nodeName, prop) {\n  try {\n    const items = $(nodeName).all();\n    if (!items || !items.length) return null;\n    const v = items[0].json ? items[0].json[prop] : undefined;\n    return v == null ? null : v;\n  } catch (e) { return null; }\n}\n\nconst aggRaw = readFromNode('Redis GET aggregate (finalize)', 'agg');\nconst validationRaw = readFromNode('Redis GET validation', 'validation');\nconst targetsRaw = readFromNode('Redis GET targets', 'targets');\n\nlet data = [];\ntry {\n  if (typeof aggRaw === 'string') data = JSON.parse(aggRaw || '[]');\n  else if (Array.isArray(aggRaw)) data = aggRaw;\n} catch (e) { data = []; }\nif (!Array.isArray(data)) data = [];\n\nlet validation = null;\ntry {\n  if (typeof validationRaw === 'string') validation = JSON.parse(validationRaw);\n  else if (validationRaw && typeof validationRaw === 'object') validation = validationRaw;\n} catch (e) { validation = null; }\n\nlet forecastTargets = null;\ntry {\n  if (typeof targetsRaw === 'string') forecastTargets = JSON.parse(targetsRaw);\n  else if (Array.isArray(targetsRaw)) forecastTargets = targetsRaw;\n} catch (e) { forecastTargets = null; }\n\nconst envelope = {\n  data,\n  createdAt: new Date().toISOString(),\n  validation,\n  forecastTargets,\n};\n\nreturn [{ json: { envelopeStr: JSON.stringify(envelope), count: data.length, debug: { aggRawType: typeof aggRaw, aggRawLen: typeof aggRaw === 'string' ? aggRaw.length : null, hasValidation: validation != null, hasTargets: forecastTargets != null } } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13088,
+        7248
+      ],
+      "id": "c64c6a54-5dc1-4f6e-8b5a-463e2192e916",
+      "name": "Build Envelope"
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "predict-response",
+        "messageData": "={{ $json.envelopeStr }}"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13312,
+        7248
+      ],
+      "id": "6727f9a2-dfa4-4666-9258-774b247711ba",
+      "name": "Redis PUSH response",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-source"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13520,
+        7248
+      ],
+      "id": "72ae8d8a-5c82-44bc-98e6-c05f2eca16c9",
+      "name": "Redis DEL source",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-aggregate"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13728,
+        7248
+      ],
+      "id": "a5ca8b1a-1b8e-4004-bb4f-83d828fe1905",
+      "name": "Redis DEL aggregate",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-validation"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        13936,
+        7248
+      ],
+      "id": "0c8c72d4-3ef2-46ee-9385-1667b28fbd47",
+      "name": "Redis DEL validation (final)",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-targets"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        14144,
+        7248
+      ],
+      "id": "878ed0d4-bdce-464f-94c0-f30cc5b8d244",
+      "name": "Redis DEL targets (final)",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'finalize', count: $('Build Envelope').first().json.count } }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        14352,
+        7248
+      ],
+      "id": "884737e0-0230-4ebf-bd9c-247ee0753c0b",
+      "name": "Respond Finalize"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: \"phase inválido. Use start | chunk | finalize.\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        12464,
+        7568
+      ],
+      "id": "63b3e930-cab6-45ea-aee7-9aa202241175",
+      "name": "Respond Bad Phase"
+    },
+    {
+      "parameters": {
+        "content": "## PredictNextThreeMonths v2 — Orquestrador Chunked (inline)\n\n**Phases (POST body.phase):**\n- `start`  → baixa planilha 1×, persiste em `predict-source`, zera `predict-aggregate` e `predict-response`. Responde `{ totalSkus, chunkSize: 30 }`.\n- `chunk`  → recebe `{ skuOffset, skuLimit }`, processa a fatia INLINE (Prep → Heurística → Parse), faz merge no `predict-aggregate`. Responde `{ processedSkus, nextOffset, hasMore, ... }`.\n- `finalize` → lê `predict-aggregate`, monta envelope `{ data, createdAt, validation, forecastTargets }`, faz `RPUSH predict-response` (mantém contrato do GetCached) e limpa temporários.\n\n**Importação:**\n1. Importar este workflow e ativar.\n2. Desativar o `Universo-PredictNextThreeMonths` antigo (eles compartilham o path `/webhook/PredictNextThreeMonths`).\n3. (Opcional) Universo-Predict.v2.json não é mais necessário — a lógica está inlined aqui.",
+        "height": 424,
+        "width": 720,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        11760,
+        6320
+      ],
+      "typeVersion": 1,
+      "id": "9831845c-f661-46aa-986e-c6933beed3fa",
+      "name": "README"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Phase Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Phase Switch": {
+      "main": [
+        [
+          {
+            "node": "Download file (start)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis GET source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis GET aggregate (finalize)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Bad Phase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file (start)": {
+      "main": [
+        [
+          {
+            "node": "Extract sheet data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract sheet data": {
+      "main": [
+        [
+          {
+            "node": "Build Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Source": {
+      "main": [
+        [
+          {
+            "node": "Redis SET source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET source": {
+      "main": [
+        [
+          {
+            "node": "Redis SET aggregate=[]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET aggregate=[]": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL response": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL validation": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL targets": {
+      "main": [
+        [
+          {
+            "node": "Respond Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET source": {
+      "main": [
+        [
+          {
+            "node": "Prep Chunk Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Chunk Input": {
+      "main": [
+        [
+          {
+            "node": "Inline Prep Sazonal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inline Prep Sazonal": {
+      "main": [
+        [
+          {
+            "node": "Inline Heurística",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inline Heurística": {
+      "main": [
+        [
+          {
+            "node": "Inline Parse Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inline Parse Result": {
+      "main": [
+        [
+          {
+            "node": "Redis GET aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET aggregate": {
+      "main": [
+        [
+          {
+            "node": "Combine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine": {
+      "main": [
+        [
+          {
+            "node": "Redis SET aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET aggregate": {
+      "main": [
+        [
+          {
+            "node": "Redis SET validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET validation": {
+      "main": [
+        [
+          {
+            "node": "Redis SET targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET targets": {
+      "main": [
+        [
+          {
+            "node": "Respond Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET aggregate (finalize)": {
+      "main": [
+        [
+          {
+            "node": "Redis GET validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET validation": {
+      "main": [
+        [
+          {
+            "node": "Redis GET targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET targets": {
+      "main": [
+        [
+          {
+            "node": "Build Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Envelope": {
+      "main": [
+        [
+          {
+            "node": "Redis PUSH response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis PUSH response": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL source": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL aggregate": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL validation (final)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL validation (final)": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL targets (final)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL targets (final)": {
+      "main": [
+        [
+          {
+            "node": "Respond Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  }
+}

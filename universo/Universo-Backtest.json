@@ -1,0 +1,252 @@
+{
+  "name": "Universo-Backtest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "Backtest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        0
+      ],
+      "id": "wh-84800d4ff156",
+      "name": "Webhook",
+      "webhookId": "wh-uuid-6ae6ab1839ab"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "1MDh0fkb4-7gGha68UULDCudJ9VT0rTwSs_vIM-GxTHg",
+          "mode": "id",
+          "cachedResultName": "Dados Historicos (Google Sheets) - default",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1MDh0fkb4-7gGha68UULDCudJ9VT0rTwSs_vIM-GxTHg"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -160,
+        0
+      ],
+      "id": "dl-7fd125236fe8",
+      "name": "Download file",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "vendas_historico"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        80,
+        0
+      ],
+      "id": "ext-1aa22e1f2b55",
+      "name": "Extract sheet data",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const jsonData = $input.all().map(input => input.json);\nreturn { columns: jsonData };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ],
+      "id": "merge-55b982619577",
+      "name": "Merge Payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\r\n// Preparação de Dados Sazonais — BACKTEST\r\n//\r\n// Diferença vs versão de produção:\r\n//   - Aceita uma data de referência ARBITRÁRIA vinda do webhook (`referenceDate`)\r\n//   - Para essa data, só considera histórico STRITAMENTE ANTERIOR ao mês alvo\r\n//   - Pode receber múltiplos meses-alvo de uma vez (`targetMonths` no webhook).\r\n// Webhook input shape (passa pelo \"Set Reference\"):\r\n//   { targetMonths: [\"YYYY-MM\", \"YYYY-MM\", ...] }\r\n// Cada SKU é avaliado para cada targetMonth.\r\n// =============================================================================\r\n\r\nconst WINDOW_OFFSET = 2;\r\n\r\n// Recupera a configuração do webhook (vem como item extra no input)\r\nconst webhookData = $(\"Webhook\").first().json;\r\nconst body = webhookData.body || webhookData;\r\nlet targetMonths = body.targetMonths;\r\nif (!Array.isArray(targetMonths) || targetMonths.length === 0) {\r\n  // Default: backtest dos últimos 3 meses presentes\r\n  targetMonths = [];\r\n}\r\n\r\n// --- Chunking por SKU (para não sobrecarregar o task-runner do n8n) ---\r\nconst skuOffset = Number.isFinite(Number(body.skuOffset)) ? Math.max(0, parseInt(body.skuOffset, 10)) : 0;\r\nconst skuLimitRaw = Number.isFinite(Number(body.skuLimit)) ? parseInt(body.skuLimit, 10) : 0;\r\nconst skuLimit = skuLimitRaw > 0 ? skuLimitRaw : 0;\r\n\r\n// Coleta SKUs vindos do Merge Payload\r\nconst skuItemsAll = [];\r\nfor (const item of $input.all()) {\r\n  const list = item.json.columns || [item.json];\r\n  for (const sku of list) skuItemsAll.push(sku);\r\n}\r\nconst totalSkus = skuItemsAll.length;\r\nconst skuItems = skuLimit > 0\r\n  ? skuItemsAll.slice(skuOffset, skuOffset + skuLimit)\r\n  : skuItemsAll.slice(skuOffset);\r\n\r\n// Se não passou targetMonths, escolhe automaticamente os 3 últimos meses presentes\r\nif (targetMonths.length === 0) {\r\n  const found = new Set();\r\n  for (const sku of skuItems) {\r\n    for (const k of Object.keys(sku)) {\r\n      if (/^\\d{4}-\\d{2}$/.test(k) && sku[k] != null && !isNaN(Number(sku[k]))) {\r\n        found.add(k);\r\n      }\r\n    }\r\n  }\r\n  const sorted = [...found].sort();\r\n  targetMonths = sorted.slice(-3);\r\n}\r\n\r\nconst results = [];\r\n\r\nfor (const targetMonth of targetMonths) {\r\n  const m = targetMonth.match(/^(\\d{4})-(\\d{2})$/);\r\n  if (!m) continue;\r\n  const targetYear = parseInt(m[1], 10);\r\n  const targetMonthNum = parseInt(m[2], 10);\r\n\r\n  // Para cada SKU, monta a janela sazonal CONSIDERANDO apenas histórico < target\r\n  for (const sku of skuItems) {\r\n    const skuCode = sku.SKU;\r\n    const description = sku[\"Descrição\"];\r\n    const formato = sku.Formato;\r\n\r\n    const salesByYearMonth = {};\r\n    const allYears = new Set();\r\n    let realValue = null;\r\n    let monthsAvailable = 0;\r\n\r\n    for (const key of Object.keys(sku)) {\r\n      const km = key.match(/^(\\d{4})-(\\d{2})$/);\r\n      if (!km) continue;\r\n      const v = sku[key];\r\n      if (v == null || v === \"\" || isNaN(Number(v))) continue;\r\n      const y = parseInt(km[1], 10);\r\n      const mm = parseInt(km[2], 10);\r\n      const numericValue = Number(v);\r\n\r\n      if (y === targetYear && mm === targetMonthNum) {\r\n        realValue = numericValue;\r\n        continue; // não usar como histórico\r\n      }\r\n      // Apenas histórico ESTRITAMENTE anterior ao mês alvo\r\n      if (y < targetYear || (y === targetYear && mm < targetMonthNum)) {\r\n        if (!salesByYearMonth[y]) salesByYearMonth[y] = {};\r\n        salesByYearMonth[y][mm] = numericValue;\r\n        allYears.add(y);\r\n        monthsAvailable++;\r\n      }\r\n    }\r\n\r\n    const sortedYears = [...allYears].sort((a, b) => a - b);\r\n\r\n    // Janela\r\n    const windowMonths = [];\r\n    for (let off = -WINDOW_OFFSET; off <= WINDOW_OFFSET; off++) {\r\n      let wm = targetMonthNum + off;\r\n      if (wm < 1) wm += 12;\r\n      if (wm > 12) wm -= 12;\r\n      windowMonths.push(wm);\r\n    }\r\n    const historicalYears = sortedYears.filter((y) => y < targetYear);\r\n    const historicalData = {};\r\n    for (const year of historicalYears) {\r\n      const yd = {};\r\n      for (const wm of windowMonths) {\r\n        if (\r\n          salesByYearMonth[year] &&\r\n          salesByYearMonth[year][wm] !== undefined\r\n        ) {\r\n          yd[`${year}-${String(wm).padStart(2, \"0\")}`] =\r\n            salesByYearMonth[year][wm];\r\n        }\r\n      }\r\n      if (Object.keys(yd).length) historicalData[year] = yd;\r\n    }\r\n    const targetMonthHistory = [];\r\n    for (const year of historicalYears) {\r\n      if (\r\n        salesByYearMonth[year] &&\r\n        salesByYearMonth[year][targetMonthNum] !== undefined\r\n      ) {\r\n        targetMonthHistory.push({\r\n          year,\r\n          value: salesByYearMonth[year][targetMonthNum],\r\n        });\r\n      }\r\n    }\r\n    const recentMonths = [];\r\n    let ry = targetYear,\r\n      rm = targetMonthNum - 1;\r\n    if (rm < 1) {\r\n      rm = 12;\r\n      ry--;\r\n    }\r\n    for (let i = 0; i < 6; i++) {\r\n      if (salesByYearMonth[ry] && salesByYearMonth[ry][rm] !== undefined) {\r\n        recentMonths.push({\r\n          key: `${ry}-${String(rm).padStart(2, \"0\")}`,\r\n          value: salesByYearMonth[ry][rm],\r\n        });\r\n      }\r\n      rm--;\r\n      if (rm < 1) {\r\n        rm = 12;\r\n        ry--;\r\n      }\r\n    }\r\n\r\n    const values = targetMonthHistory.map((v) => v.value);\r\n    const n = values.length;\r\n    const mean = n > 0 ? values.reduce((a, b) => a + b, 0) / n : 0;\r\n    const variance =\r\n      n > 1\r\n        ? values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / (n - 1)\r\n        : 0;\r\n    const stdDev = Math.sqrt(variance);\r\n\r\n    const insufficientHistory = monthsAvailable < 2;\r\n    const seasonalWindows = {};\r\n    seasonalWindows[targetMonth] = {\r\n      windowMonths: windowMonths.map((m) => String(m).padStart(2, \"0\")),\r\n      historicalYears,\r\n      historicalData,\r\n      targetMonthHistory,\r\n      recentMonths,\r\n      statistics: {\r\n        mean: parseFloat(mean.toFixed(3)),\r\n        stdDev: parseFloat(stdDev.toFixed(3)),\r\n        confidenceInterval: {\r\n          lower: parseFloat(Math.max(0, mean - stdDev).toFixed(3)),\r\n          upper: parseFloat((mean + stdDev).toFixed(3)),\r\n        },\r\n        sampleSize: n,\r\n      },\r\n      windowStatistics: { mean: 0, stdDev: 0, sampleSize: 0 },\r\n    };\r\n\r\n    results.push({\r\n      SKU: skuCode,\r\n      Descrição: description,\r\n      Formato: formato,\r\n      backtestTarget: targetMonth,\r\n      realValue,\r\n      historyMonthsAvailable: monthsAvailable,\r\n      insufficientHistory,\r\n      monthsMissingForMin: Math.max(0, 2 - monthsAvailable),\r\n      dataReferencia: targetMonth + \"-01\",\r\n      seasonalWindows,\r\n    });\r\n  }\r\n}\r\n\r\nreturn { analysis: results, targetMonths, totalSkus, skuOffset, skuLimit };\r\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "prep-f9e9536de5b1",
+      "name": "Preparação Sazonal Backtest"
+    },
+    {
+      "parameters": {
+        "language": "pythonNative",
+        "pythonCode": "# =============================================================================\r\n# seasonal_forecast.py — v2\r\n# Previsão de Vendas — Ensemble Determinístico (3 Métodos) + extensões\r\n#\r\n# MUDANÇAS desta versão:\r\n#   1. Respeita `insufficientHistory` (vindo do JS): retorna previsoes vazias\r\n#      com motivo \"historico_insuficiente\".\r\n#   2. Trata `Formato`:\r\n#        - \"Comprados\" → Média Móvel Simples dos últimos 3 meses\r\n#                        (lead time 20-30 dias do dept de compras)\r\n#        - \"SGB\"       → mesmo ensemble, mas com flag `tipo: \"SGB\"`\r\n#                        (Private Label — previsão externa \"furada\")\r\n#        - outros      → ensemble (heurística + SES + tendência sazonal)\r\n#   3. `tolerancePct`: tolerância ± em % baseada em stdDev/mean (CV).\r\n#   4. `intervaloConfianca` ajustado em torno da PREVISÃO usando tolerância.\r\n# =============================================================================\r\n\r\n\r\ndef _mean(vals):\r\n    return sum(vals) / len(vals) if vals else 0.0\r\n\r\n\r\ndef _pop_std(vals):\r\n    if len(vals) < 2:\r\n        return 0.0\r\n    m = _mean(vals)\r\n    return (sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5\r\n\r\n\r\ndef _recency_weights(n):\r\n    if n <= 0:\r\n        return []\r\n    if n == 1:\r\n        return [4.0]\r\n    if n == 2:\r\n        return [2.0, 4.0]\r\n    if n == 3:\r\n        return [2.0, 2.0, 4.0]\r\n    return [1.0] + [2.0] * (n - 2) + [4.0]\r\n\r\n\r\ndef _weighted_mean(vals, weights):\r\n    tw = sum(weights)\r\n    if tw == 0:\r\n        return _mean(vals)\r\n    return sum(v * w for v, w in zip(vals, weights)) / tw\r\n\r\n\r\ndef _ols(xs, ys):\r\n    n = len(xs)\r\n    if n < 2:\r\n        return (_mean(ys), 0.0)\r\n    mx = _mean(xs); my = _mean(ys)\r\n    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))\r\n    den = sum((x - mx) ** 2 for x in xs)\r\n    if abs(den) < 1e-12:\r\n        return (my, 0.0)\r\n    b = num / den\r\n    return (my - b * mx, b)\r\n\r\n\r\ndef _judge_heuristic(values, trend_blend=0.7):\r\n    n = len(values)\r\n    if n == 0: return 0.0\r\n    if n == 1: return values[0]\r\n    w_avg = _weighted_mean(values, _recency_weights(n))\r\n    ratios = [values[i + 1] / values[i] for i in range(n - 1) if values[i] > 0]\r\n    if len(ratios) >= 2:\r\n        trend_ratio = 0.3 * ratios[0] + 0.7 * ratios[-1]\r\n    elif ratios:\r\n        trend_ratio = ratios[0]\r\n    else:\r\n        trend_ratio = 1.0\r\n    trend_forecast = max(0.0, values[-1] * trend_ratio)\r\n    hist_mean = _mean(values)\r\n    cv = _pop_std(values) / hist_mean if hist_mean > 0 else 0.0\r\n    cv_factor = min(cv, 1.0)\r\n    adaptive = trend_blend * (1.0 - cv_factor * 0.6)\r\n    if hist_mean > 0 and values[-1] / hist_mean < 0.3:\r\n        adaptive *= 0.3\r\n    anchor = cv_factor * hist_mean + (1.0 - cv_factor) * w_avg\r\n    return max(0.0, adaptive * trend_forecast + (1.0 - adaptive) * anchor)\r\n\r\n\r\ndef _judge_ses(values):\r\n    n = len(values)\r\n    if n == 0: return 0.0\r\n    if n == 1: return values[0]\r\n    best_error = float(\"inf\"); best_level = values[-1]\r\n    for alpha_x10 in range(1, 10):\r\n        alpha = alpha_x10 / 10.0\r\n        level = values[0]; error = 0.0\r\n        for i in range(1, n):\r\n            error += (values[i] - level) ** 2\r\n            level = alpha * values[i] + (1.0 - alpha) * level\r\n        if error < best_error:\r\n            best_error = error; best_level = level\r\n    return max(0.0, best_level)\r\n\r\n\r\ndef _judge_window_trend(values, years, hist_data):\r\n    n = len(values)\r\n    if n == 0: return 0.0\r\n    if n == 1: return values[0]\r\n    window_means = []; valid_years = []\r\n    for yr in years:\r\n        yk = str(yr)\r\n        if yk in hist_data:\r\n            wv = list(hist_data[yk].values())\r\n            if wv:\r\n                window_means.append(_mean(wv)); valid_years.append(yr)\r\n    if len(window_means) < 2:\r\n        return max(0.0, _weighted_mean(values, _recency_weights(n)))\r\n    forecast_year = max(years) + 1\r\n    a, b = _ols(valid_years, window_means)\r\n    predicted_window_mean = a + b * forecast_year\r\n    seasonal_ratios = []\r\n    for i, yr in enumerate(years):\r\n        yk = str(yr)\r\n        if yk in hist_data:\r\n            wv = list(hist_data[yk].values())\r\n            wm = _mean(wv)\r\n            if wm > 0:\r\n                seasonal_ratios.append(values[i] / wm)\r\n    seasonal_ratio = _weighted_mean(seasonal_ratios, _recency_weights(len(seasonal_ratios))) if seasonal_ratios else 1.0\r\n    result = predicted_window_mean * seasonal_ratio\r\n    if result <= 0:\r\n        return max(0.0, _weighted_mean(values, _recency_weights(n)))\r\n    return max(0.0, result)\r\n\r\n\r\ndef _backtest_weights(values, years, hist_data):\r\n    n = len(values)\r\n    if n < 3:\r\n        return [1.0 / 3, 1.0 / 3, 1.0 / 3]\r\n    train_vals = values[:-1]; train_years = years[:-1]\r\n    actual = values[-1]\r\n    last_year_key = str(years[-1])\r\n    train_hist = {k: v for k, v in hist_data.items() if k != last_year_key}\r\n    preds = [\r\n        _judge_heuristic(train_vals),\r\n        _judge_ses(train_vals),\r\n        _judge_window_trend(train_vals, train_years, train_hist),\r\n    ]\r\n    errors = [abs(actual - p) for p in preds]\r\n    epsilon = max(1.0, actual * 0.05)\r\n    inv_errors = [1.0 / (e + epsilon) for e in errors]\r\n    total = sum(inv_errors)\r\n    return [w / total for w in inv_errors]\r\n\r\n\r\ndef _forecast_target(values, years, hist_data):\r\n    pred_h = _judge_heuristic(values)\r\n    pred_s = _judge_ses(values)\r\n    pred_t = _judge_window_trend(values, years, hist_data)\r\n    weights = _backtest_weights(values, years, hist_data)\r\n    prediction = pred_h * weights[0] + pred_s * weights[1] + pred_t * weights[2]\r\n    return {\r\n        \"previsao\": max(0.0, round(prediction, 3)),\r\n        \"metodos\": {\r\n            \"heuristica\": round(pred_h, 3),\r\n            \"suavizacaoExponencial\": round(pred_s, 3),\r\n            \"tendenciaSazonal\": round(pred_t, 3),\r\n        },\r\n        \"pesos\": {\r\n            \"heuristica\": round(weights[0], 3),\r\n            \"suavizacaoExponencial\": round(weights[1], 3),\r\n            \"tendenciaSazonal\": round(weights[2], 3),\r\n        },\r\n    }\r\n\r\n\r\ndef _confidence_label(sample_size, cv_factor):\r\n    if sample_size < 3: return \"baixa\"\r\n    if cv_factor > 0.5: return \"média\"\r\n    return \"alta\"\r\n\r\n\r\ndef _tolerance_pct(values, prediction):\r\n    \"\"\"Tolerância ± em % com base no CV; mínimo 10%, máximo 60%.\"\"\"\r\n    if not values or prediction <= 0:\r\n        return 30.0\r\n    m = _mean(values)\r\n    if m <= 0:\r\n        return 30.0\r\n    cv = _pop_std(values) / m\r\n    pct = round(cv * 100.0, 1)\r\n    if pct < 10.0: pct = 10.0\r\n    if pct > 60.0: pct = 60.0\r\n    return pct\r\n\r\n\r\ndef _moving_average_3(window):\r\n    \"\"\"Para SKUs Comprados: média simples dos meses recentes (até 3).\"\"\"\r\n    recent = window.get(\"recentMonths\", [])\r\n    if not recent:\r\n        # fallback: usar histórico do mês alvo\r\n        tmh = window.get(\"targetMonthHistory\", [])\r\n        vals = [e[\"value\"] for e in tmh]\r\n        return _mean(vals)\r\n    vals = [r[\"value\"] for r in recent[:3]]\r\n    return _mean(vals)\r\n\r\n\r\ndef seasonal_forecast(sku_data):\r\n    formato = (sku_data.get(\"Formato\") or \"\").strip()\r\n    formato_norm = formato.lower()\r\n\r\n    base = {\r\n        \"SKU\": sku_data.get(\"SKU\"),\r\n        \"Descrição\": sku_data.get(\"Descrição\", \"\"),\r\n        \"Formato\": formato,\r\n        \"dataReferencia\": sku_data.get(\"dataReferencia\", \"\"),\r\n        \"historyMonthsAvailable\": sku_data.get(\"historyMonthsAvailable\", 0),\r\n        \"insufficientHistory\": bool(sku_data.get(\"insufficientHistory\", False)),\r\n        \"monthsMissingForMin\": sku_data.get(\"monthsMissingForMin\", 0),\r\n    }\r\n\r\n    windows = sku_data.get(\"seasonalWindows\", {}) or {}\r\n\r\n    # Curto-circuito: histórico insuficiente\r\n    if base[\"insufficientHistory\"]:\r\n        previsoes = []\r\n        for target_month in sorted(windows.keys()):\r\n            previsoes.append({\r\n                \"mes\": target_month,\r\n                \"previsao\": 0.0,\r\n                \"tolerancePct\": 0.0,\r\n                \"intervaloConfianca\": {\"lower\": 0.0, \"upper\": 0.0},\r\n                \"confianca\": \"baixa\",\r\n                \"motivo\": \"historico_insuficiente\",\r\n                \"tipo\": \"ensemble\",\r\n            })\r\n        base[\"previsoes\"] = previsoes\r\n        return base\r\n\r\n    previsoes = []\r\n    is_comprados = formato_norm == \"comprados\"\r\n    is_sgb       = formato_norm == \"sgb\"\r\n\r\n    for target_month in sorted(windows.keys()):\r\n        window = windows[target_month]\r\n        target_history = window.get(\"targetMonthHistory\", [])\r\n        stats = window.get(\"statistics\", {})\r\n        hist_data = window.get(\"historicalData\", {})\r\n\r\n        values = [entry[\"value\"] for entry in target_history]\r\n        years  = [entry[\"year\"]  for entry in target_history]\r\n\r\n        hist_mean = _mean(values) if values else 0.0\r\n        cv = _pop_std(values) / hist_mean if hist_mean > 0 else 0.0\r\n        cv_factor = min(cv, 1.0)\r\n\r\n        if is_comprados:\r\n            previsao = round(max(0.0, _moving_average_3(window)), 3)\r\n            recent_vals = [r[\"value\"] for r in window.get(\"recentMonths\", [])[:3]]\r\n            tol = _tolerance_pct(recent_vals, previsao)\r\n            previsoes.append({\r\n                \"mes\": target_month,\r\n                \"previsao\": previsao,\r\n                \"tolerancePct\": tol,\r\n                \"intervaloConfianca\": {\r\n                    \"lower\": round(max(0.0, previsao * (1 - tol / 100.0)), 3),\r\n                    \"upper\": round(previsao * (1 + tol / 100.0), 3),\r\n                },\r\n                \"confianca\": _confidence_label(len(recent_vals), cv_factor),\r\n                \"tipo\": \"comprados_sma3\",\r\n                \"metodos\": {\"mediaMovel3\": previsao},\r\n                \"pesos\": {\"mediaMovel3\": 1.0},\r\n            })\r\n            continue\r\n\r\n        if not values:\r\n            previsoes.append({\r\n                \"mes\": target_month,\r\n                \"previsao\": 0.0,\r\n                \"tolerancePct\": 0.0,\r\n                \"intervaloConfianca\": {\"lower\": 0.0, \"upper\": 0.0},\r\n                \"confianca\": \"baixa\",\r\n                \"tipo\": \"sgb\" if is_sgb else \"ensemble\",\r\n                \"motivo\": \"sem_historico_no_mes_alvo\",\r\n            })\r\n            continue\r\n\r\n        fc = _forecast_target(values, years, hist_data)\r\n        tol = _tolerance_pct(values, fc[\"previsao\"])\r\n        previsoes.append({\r\n            \"mes\": target_month,\r\n            \"previsao\": fc[\"previsao\"],\r\n            \"tolerancePct\": tol,\r\n            \"intervaloConfianca\": {\r\n                \"lower\": round(max(0.0, fc[\"previsao\"] * (1 - tol / 100.0)), 3),\r\n                \"upper\": round(fc[\"previsao\"] * (1 + tol / 100.0), 3),\r\n            },\r\n            \"confianca\": _confidence_label(stats.get(\"sampleSize\", 0), cv_factor),\r\n            \"tipo\": \"sgb\" if is_sgb else \"ensemble\",\r\n            \"metodos\": fc[\"metodos\"],\r\n            \"pesos\": fc[\"pesos\"],\r\n        })\r\n\r\n    base[\"previsoes\"] = previsoes\r\n    return base\r\n\r\n\r\n# ─── n8n bridge ───\r\n_results = []\r\n_validation = None\r\n_forecast_targets = None\r\n_target_months = None\r\n\r\nfor _item in _items:\r\n    _d = _item[\"json\"]\r\n    _skus = _d.get(\"analysis\")\r\n    if _skus is None:\r\n        _skus = [_d]\r\n    if _validation is None:\r\n        _validation = _d.get(\"validation\")\r\n    if _forecast_targets is None:\r\n        _forecast_targets = _d.get(\"forecastTargets\")\r\n    if _target_months is None:\r\n        _target_months = _d.get(\"targetMonths\")\r\n    for _sku in _skus:\r\n        _row = seasonal_forecast(_sku)\r\n        # Backtest passthrough\r\n        if \"backtestTarget\" in _sku:\r\n            _row[\"backtestTarget\"] = _sku[\"backtestTarget\"]\r\n        if \"realValue\" in _sku:\r\n            _row[\"realValue\"] = _sku[\"realValue\"]\r\n        if _validation is not None:\r\n            _row[\"_validation\"] = _validation\r\n        if _forecast_targets is not None:\r\n            _row[\"_forecastTargets\"] = _forecast_targets\r\n        if _target_months is not None:\r\n            _row[\"_targetMonths\"] = _target_months\r\n        _results.append({\"json\": _row})\r\n\r\nreturn _results\r\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ],
+      "id": "heur-ea03488ca79f",
+      "name": "Heurística Deterministica Sazonal"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\r\n// Backtest Compare — junta previsão (do Python) com valor real (do JS prep)\r\n// e calcula o erro percentual. Devolve um array para a planilha de saída.\r\n// =============================================================================\r\n\r\nconst rows = [];\r\nlet targetMonths = null;\r\n\r\nfor (const item of $input.all()) {\r\n  const data = item.json;\r\n  if (!targetMonths && data._targetMonths) targetMonths = data._targetMonths;\r\n\r\n  const target =\r\n    data.backtestTarget ||\r\n    (data.previsoes && data.previsoes[0] && data.previsoes[0].mes);\r\n  if (!target) continue;\r\n\r\n  const prev =\r\n    (data.previsoes || []).find((p) => p.mes === target) || data.previsoes?.[0];\r\n  const previsao = prev ? prev.previsao : 0;\r\n  const tolerancePct = prev ? prev.tolerancePct || 0 : 0;\r\n  const real = data.realValue;\r\n\r\n  let errorAbs = null,\r\n    errorPct = null,\r\n    dentroDaTolerancia = null;\r\n  if (real != null && real !== 0) {\r\n    errorAbs = Math.abs(previsao - real);\r\n    errorPct = parseFloat(((errorAbs / Math.abs(real)) * 100).toFixed(2));\r\n    dentroDaTolerancia = errorPct <= tolerancePct;\r\n  }\r\n\r\n  rows.push({\r\n    json: {\r\n      mes: target,\r\n      SKU: data.SKU,\r\n      Descrição: data[\"Descrição\"],\r\n      Formato: data.Formato || \"\",\r\n      previsto: previsao,\r\n      real: real,\r\n      errorAbs,\r\n      errorPct,\r\n      tolerancePct,\r\n      dentroDaTolerancia,\r\n      tipo: prev ? prev.tipo : null,\r\n      insufficientHistory: !!data.insufficientHistory,\r\n    },\r\n  });\r\n}\r\n\r\nreturn rows;\r\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "cmp-dbb7a790bb6b",
+      "name": "Backtest Compare"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\r\n// Backtest Response — empacota as linhas + agrega MAPE/totais por mês.\r\n// =============================================================================\r\n\r\nconst items = $input.all().map((d) => d.json);\r\n\r\n// Lê metadados de chunk diretamente do node de preparação\r\nlet totalSkus = 0, skuOffset = 0, skuLimit = 0, targetMonths = null;\r\ntry {\r\n  const prep = $(\"Preparação Sazonal Backtest\").first().json;\r\n  if (prep) {\r\n    if (typeof prep.totalSkus === \"number\") totalSkus = prep.totalSkus;\r\n    if (typeof prep.skuOffset === \"number\") skuOffset = prep.skuOffset;\r\n    if (typeof prep.skuLimit === \"number\") skuLimit = prep.skuLimit;\r\n    if (Array.isArray(prep.targetMonths)) targetMonths = prep.targetMonths;\r\n  }\r\n} catch (e) {}\r\n\r\nconst processed = items.length > 0 && targetMonths && targetMonths.length > 0\r\n  ? Math.round(items.length / targetMonths.length)\r\n  : items.length;\r\nconst nextOffset = skuOffset + processed;\r\nconst hasMore = totalSkus > 0 && nextOffset < totalSkus;\r\n\r\nconst byMonth = {};\r\nfor (const r of items) {\r\n  if (!byMonth[r.mes])\r\n    byMonth[r.mes] = { mes: r.mes, n: 0, mapeSum: 0, hits: 0, withinTol: 0 };\r\n  byMonth[r.mes].n += 1;\r\n  if (r.errorPct != null) {\r\n    byMonth[r.mes].mapeSum += r.errorPct;\r\n    byMonth[r.mes].hits += 1;\r\n    if (r.dentroDaTolerancia) byMonth[r.mes].withinTol += 1;\r\n  }\r\n}\r\n\r\nconst summary = Object.values(byMonth)\r\n  .map((s) => ({\r\n    mes: s.mes,\r\n    skus: s.n,\r\n    skusComReal: s.hits,\r\n    mape: s.hits ? parseFloat((s.mapeSum / s.hits).toFixed(2)) : null,\r\n    pctDentroTolerancia: s.hits\r\n      ? parseFloat(((s.withinTol / s.hits) * 100).toFixed(2))\r\n      : null,\r\n  }))\r\n  .sort((a, b) => a.mes.localeCompare(b.mes));\r\n\r\nreturn {\r\n  data: items,\r\n  summary,\r\n  totalSkus,\r\n  skuOffset,\r\n  skuLimit,\r\n  processedSkus: processed,\r\n  nextOffset,\r\n  hasMore,\r\n  createdAt: $now,\r\n};\r\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        0
+      ],
+      "id": "resp-b5e98508bae5",
+      "name": "Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1520,
+        0
+      ],
+      "id": "rtw-1ee904e16e22",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Extract sheet data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract sheet data": {
+      "main": [
+        [
+          {
+            "node": "Merge Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Payload": {
+      "main": [
+        [
+          {
+            "node": "Preparação Sazonal Backtest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparação Sazonal Backtest": {
+      "main": [
+        [
+          {
+            "node": "Heurística Deterministica Sazonal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heurística Deterministica Sazonal": {
+      "main": [
+        [
+          {
+            "node": "Backtest Compare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backtest Compare": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Forecast CRS Brands</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://www.crsbrands.com.br/images6028/logos/299/favicon_cef3-sk.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    // Polyfill storage for sandboxed environments
+    (function(){
+      function createMemoryStorage(){var s={};return{getItem:function(k){return s.hasOwnProperty(k)?s[k]:null},setItem:function(k,v){s[k]=String(v)},removeItem:function(k){delete s[k]},clear:function(){for(var p in s)delete s[p]},get length(){return Object.keys(s).length},key:function(i){return Object.keys(s)[i]||null}}}
+      try{window.sessionStorage}catch(e){Object.defineProperty(window,"sessionStorage",{value:createMemoryStorage(),writable:false})}
+      try{window.localStorage}catch(e){Object.defineProperty(window,"localStorage",{value:createMemoryStorage(),writable:false})}
+      var noopReq=function(n,o,cb){if(typeof o==="function"){cb=o}return Promise.resolve(cb({name:n,mode:"exclusive"}))};
+      try{Object.defineProperty(navigator,"locks",{value:{request:noopReq,query:function(){return Promise.resolve({held:[],pending:[]})}},writable:true,configurable:true})}catch(e){try{navigator.locks={request:noopReq,query:function(){return Promise.resolve({held:[],pending:[]})}}}catch(e2){}}
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --color-primary: #0a1f5c;
+      --color-primary-hover: #0d2a7a;
+      --color-secondary: #be8e57;
+      --color-secondary-hover: #8c6539;
+      --color-accent: #1c4a85;
+      --color-white: #ffffff;
+      --color-black: #1a1a1a;
+      --color-success: #4caf50;
+      --color-error: #d32f2f;
+      --color-warning: #f9a825;
+      --bg-body: #f0f2f8;
+      --bg-sidebar: #050a14;
+      --bg-main: #e8ecf5;
+      --bg-card: #ffffff;
+      --bg-header: #0a1f5c;
+      --text-primary: #021b3c;
+      --text-secondary: #5a5d72;
+      --text-inverse: #ffffff;
+      --border-color: rgba(10, 31, 92, 0.12);
+      --sidebar-width: 260px;
+      --shadow-card: 0 2px 12px rgba(10, 31, 92, 0.08);
+      --shadow-ambient: 0 4px 24px rgba(10, 31, 92, 0.06);
+      --radius: 10px;
+      --radius-sm: 6px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg-body);
+      color: var(--text-primary);
+    }
+    .app-container { display: flex; flex-direction: column; height: 100vh; }
+
+    /* HEADER */
+    .app-header {
+      background: var(--bg-header);
+      color: var(--text-inverse);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 100;
+      position: relative;
+    }
+    .app-header::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #0a1f5c 0%, #be8e57 50%, #1c4a85 100%);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .logo-area { display: flex; align-items: center; gap: 12px; }
+    .app-logo { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.2rem; letter-spacing: -0.5px; }
+    .app-logo span { color: var(--color-secondary); }
+    .header-subtitle { font-size: 0.8rem; opacity: 0.7; font-weight: 400; }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .header-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; padding: 4px 10px; border-radius: 20px;
+      font-weight: 600; border: 1px solid rgba(76,175,80,0.3);
+      color: #4caf50; background: rgba(76,175,80,0.1);
+    }
+    .header-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #4caf50; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%{opacity:1} 50%{opacity:0.5} 100%{opacity:1} }
+
+    /* MAIN GRID */
+    .main-grid { display: grid; flex: 1; overflow: hidden; transition: grid-template-columns 0.3s ease; }
+    @media (min-width: 769px) { .main-grid { grid-template-columns: var(--sidebar-width) 1fr; } .main-grid.sidebar-closed { grid-template-columns: 0 1fr; } }
+
+    /* SIDEBAR */
+    #sidebar { background: var(--bg-sidebar); border-right: 2px solid var(--color-secondary); display: flex; flex-direction: column; overflow: hidden; }
+    .sidebar-nav { flex: 1; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-section-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1.5px; color: rgba(255,255,255,0.3);
+      padding: 16px 12px 8px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+      border-radius: 8px; color: rgba(255,255,255,0.65);
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      transition: all 0.2s; border: none; background: transparent;
+      width: 100%; text-align: left; position: relative;
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: white; }
+    .nav-item.active { background: rgba(255,255,255,0.06); color: white; }
+    .nav-item.active::before {
+      content: ''; position: absolute; left: 0; top: 50%;
+      transform: translateY(-50%); width: 4px; height: 60%;
+      background: var(--color-secondary); border-radius: 0 4px 4px 0;
+    }
+    .nav-item i { width: 18px; height: 18px; flex-shrink: 0; }
+    .nav-item.primary-action {
+      margin-top: 12px; border: 1px solid var(--color-secondary);
+      background: linear-gradient(135deg, #0a1f5c, #1c4a85); color: white;
+    }
+    .nav-item.primary-action:hover { opacity: 0.92; }
+
+    /* SIDEBAR FOOTER */
+    .sidebar-footer { padding: 16px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.15); }
+    .user-profile { display: flex; align-items: center; gap: 12px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 8px; }
+    .user-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--color-secondary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+    .user-info { flex: 1; overflow: hidden; }
+    .user-name { font-size: 13px; font-weight: 600; color: var(--text-inverse); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-role { font-size: 11px; color: rgba(255,255,255,0.5); }
+    .footer-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .footer-btn {
+      flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,0.15);
+      background: transparent; color: rgba(255,255,255,0.7);
+      border-radius: 6px; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; gap: 6px; font-size: 12px; transition: all 0.2s;
+    }
+    .footer-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+
+    /* MAIN CONTENT */
+    .main-content { overflow-y: auto; padding: 28px 32px; background: var(--bg-main); }
+    .page-section { display: none; animation: fadeIn 0.3s ease; }
+    .page-section.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .page-header { margin-bottom: 24px; }
+    .page-header h1 { font-family: 'Manrope', sans-serif; font-size: 1.6rem; font-weight: 800; color: var(--color-primary); margin-bottom: 4px; }
+    .page-header p { font-size: 0.9rem; color: var(--text-secondary); }
+
+    /* CARDS */
+    .card { background: var(--bg-card); border-radius: var(--radius); box-shadow: var(--shadow-card); overflow: hidden; margin-bottom: 20px; }
+    .card-header { padding: 18px 24px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+    .card-header h2 { font-family: 'Manrope', sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--color-primary); }
+    .card-body { padding: 24px; }
+
+    /* Card Header Enhanced */
+    .card-header-produtos {
+      background: linear-gradient(135deg, rgba(10, 31, 92, 0.03) 0%, rgba(190, 142, 87, 0.02) 100%);
+      border-bottom: 2px solid transparent;
+      border-image: linear-gradient(90deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+      border-image-slice: 1;
+      padding: 20px 24px;
+    }
+    .card-header-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-icon-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+      box-shadow: 0 4px 12px rgba(10, 31, 92, 0.2);
+    }
+    .header-icon-wrapper i {
+      width: 24px;
+      height: 24px;
+      color: white;
+    }
+    .card-header-title h2 {
+      margin: 0;
+      font-size: 1.3rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-subtitle-card {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* KPI CARDS */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .kpi-card {
+      background: var(--bg-card); border-radius: var(--radius); padding: 20px;
+      box-shadow: var(--shadow-card); border-left: 4px solid var(--color-primary);
+      transition: transform 0.2s;
+    }
+    .kpi-card:hover { transform: translateY(-2px); }
+    .kpi-card .kpi-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px; }
+    .kpi-card .kpi-value { font-family: 'Manrope', sans-serif; font-size: 1.6rem; font-weight: 800; color: var(--color-primary); }
+    .kpi-card .kpi-sub { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
+    .kpi-card.success { border-left-color: var(--color-success); }
+    .kpi-card.warning { border-left-color: var(--color-warning); }
+    .kpi-card.secondary { border-left-color: var(--color-secondary); }
+    .kpi-card.accent { border-left-color: var(--color-accent); }
+
+    /* FORMS */
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+    .form-control {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-color);
+      background: var(--bg-body); color: var(--text-primary);
+      border-radius: var(--radius-sm); font-size: 14px; outline: none;
+      transition: border-color 0.2s; font-family: inherit;
+    }
+    .form-control:focus { border-color: var(--color-primary); border-width: 2px; }
+    select.form-control { cursor: pointer; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+
+    /* BUTTONS */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: var(--radius-sm);
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      border: none; transition: all 0.2s; font-family: inherit;
+    }
+    .btn-primary { background: var(--color-primary); color: white; }
+    .btn-primary:hover { background: var(--color-primary-hover); transform: translateY(-1px); }
+    .btn-secondary { background: var(--color-secondary); color: white; }
+    .btn-secondary:hover { background: var(--color-secondary-hover); transform: translateY(-1px); }
+    .btn-outline { background: transparent; border: 1.5px solid var(--border-color); color: var(--text-primary); }
+    .btn-outline:hover { border-color: var(--color-primary); color: var(--color-primary); }
+    .btn-danger { background: var(--color-error); color: white; }
+    .btn-danger:hover { opacity: 0.9; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+    /* FILE UPLOAD */
+    .file-upload-area {
+      border: 2px dashed var(--border-color); border-radius: var(--radius);
+      padding: 40px; text-align: center; cursor: pointer;
+      transition: all 0.2s; background: var(--bg-body);
+    }
+    .file-upload-area:hover { border-color: var(--color-primary); background: rgba(10,31,92,0.03); }
+    .file-upload-area.dragover { border-color: var(--color-primary); background: rgba(10,31,92,0.06); }
+    .file-upload-area .upload-icon { font-size: 48px; color: var(--color-secondary); margin-bottom: 12px; }
+    .file-upload-area p { font-size: 0.9rem; color: var(--text-secondary); }
+    .file-upload-area .file-name { font-weight: 600; color: var(--color-primary); margin-top: 8px; }
+
+    /* TABLE */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead { background: var(--bg-body); }
+    .data-table th { padding: 12px 16px; text-align: left; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); border-bottom: 2px solid var(--border-color); }
+    .data-table th.numeric { text-align: right; }
+    .data-table td { padding: 12px 16px; font-size: 0.875rem; color: var(--text-primary); vertical-align: middle; border-bottom: 1px solid var(--border-color); }
+    .data-table td.numeric { text-align: right; font-family: 'Manrope', sans-serif; font-weight: 600; }
+    .data-table tbody tr:hover { background: rgba(10,31,92,0.02); }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .status-badge {
+      display: inline-flex; padding: 4px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600;
+    }
+    .status-badge.concluido { background: rgba(76,175,80,0.12); color: #2e7d32; }
+    .status-badge.calculando { background: rgba(249,168,37,0.12); color: #e65100; }
+    .status-badge.erro { background: rgba(211,47,47,0.12); color: #c62828; }
+
+    /* CHART CONTAINER */
+    .chart-container { position: relative; height: 350px; }
+
+    /* LOADING */
+    .loading-state { display: flex; align-items: center; justify-content: center; padding: 60px; gap: 12px; color: var(--text-secondary); }
+    .spinner { width: 24px; height: 24px; border: 3px solid var(--border-color); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* TOAST */
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      padding: 14px 20px; border-radius: var(--radius-sm); color: white;
+      font-size: 13px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      animation: slideIn 0.3s ease; display: flex; align-items: center; gap: 10px;
+      min-width: 300px;
+    }
+    .toast.success { background: #2e7d32; }
+    .toast.error { background: #c62828; }
+    .toast.warning { background: #e65100; }
+    .toast.info { background: #0a1f5c; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* LOGIN */
+    .login-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10,31,92,0.92); display: flex; align-items: center;
+      justify-content: center; z-index: 9999; backdrop-filter: blur(8px);
+    }
+    .login-box { background: var(--bg-card); padding: 40px; border-radius: var(--radius); width: 100%; max-width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; position: relative; overflow: hidden; }
+    .login-box::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #0a1f5c, #be8e57, #1c4a85); }
+    .login-logo { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.8rem; color: var(--color-primary); margin-bottom: 4px; }
+    .login-logo span { color: var(--color-secondary); }
+    .login-subtitle { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
+    .login-input { width: 100%; padding: 12px 16px; margin-bottom: 12px; border: 1.5px solid var(--border-color); background: var(--bg-body); color: var(--text-primary); border-radius: var(--radius-sm); font-size: 14px; outline: none; font-family: inherit; }
+    .login-input:focus { border-color: var(--color-primary); }
+    .login-btn { width: 100%; padding: 12px; background: var(--color-primary); color: white; border: none; border-radius: var(--radius-sm); font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .login-btn:hover { background: var(--color-primary-hover); }
+    .login-toggle { font-size: 13px; color: var(--text-secondary); margin-top: 16px; }
+    .login-toggle a { color: var(--color-primary); cursor: pointer; font-weight: 600; text-decoration: underline; }
+    .err-msg { color: var(--color-error); font-size: 13px; margin-top: 12px; display: none; }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .app-header { padding: 12px 16px; }
+      .header-subtitle { display: none; }
+      .main-grid { grid-template-columns: 1fr; position: relative; }
+      .main-grid.sidebar-closed { grid-template-columns: 1fr; }
+      #sidebar {
+        position: absolute; left: 0; top: 0; width: 260px; height: 100%;
+        z-index: 200; box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+        transition: transform 0.3s ease; transform: translateX(-100%);
+      }
+      .main-grid:not(.sidebar-closed) #sidebar { transform: translateX(0); }
+      .main-content { padding: 20px 16px; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+      .page-header h1 { font-size: 1.3rem; }
+    }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); }
+    .empty-state .empty-icon { font-size: 48px; color: var(--border-color); margin-bottom: 12px; }
+    .empty-state h3 { font-size: 1.1rem; color: var(--text-primary); margin-bottom: 8px; }
+    .empty-state p { font-size: 0.9rem; }
+
+    /* Chart grid */
+    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); display: none; align-items: center;
+      justify-content: center; z-index: 8000; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box { background: var(--bg-card); border-radius: var(--radius); width: 100%; max-width: 600px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+    .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+    .modal-header h2 { font-family: 'Manrope', sans-serif; font-size: 1.1rem; font-weight: 700; }
+    .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary); }
+    .modal-body { padding: 24px; }
+  </style>
+</head>
+<body>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- LOGIN OVERLAY -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+      <div class="login-logo">CRS <span>Forecast</span></div>
+      <p class="login-subtitle">Sistema de Previsão de Vendas</p>
+      <input class="login-input" type="email" id="loginEmail" placeholder="E-mail" autocomplete="email" />
+      <input class="login-input" type="password" id="loginPassword" placeholder="Senha" autocomplete="current-password" />
+      <button class="login-btn" id="loginBtn">Entrar</button>
+      <div class="login-toggle">
+        <span id="loginToggleText">Não tem conta?</span>
+        <a id="loginToggleLink">Cadastre-se</a>
+      </div>
+      <div class="err-msg" id="loginError"></div>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div class="app-container" id="appContainer" style="display:none;">
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-area">
+          <div class="app-logo">CRS <span>Forecast</span></div>
+          <span class="header-subtitle">Previsão de Vendas</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="header-badge"><span class="dot"></span> Conectado</div>
+      </div>
+    </header>
+
+    <div class="main-grid" id="mainGrid">
+      <!-- SIDEBAR -->
+      <aside id="sidebar">
+        <nav class="sidebar-nav">
+          <div class="nav-section-title">Forecast</div>
+          <button class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')">
+            <i data-lucide="layout-dashboard"></i> Dashboard
+          </button>
+          <button class="nav-item primary-action" data-page="calcular" onclick="navigateTo('calcular')">
+            <i data-lucide="calculator"></i> Calcular Forecast
+          </button>
+          <div class="nav-section-title" style="margin-top:16px;">Administração</div>
+          <button class="nav-item" data-page="usuarios" onclick="navigateTo('usuarios')" id="usersNavBtn">
+            <i data-lucide="users"></i> Usuários
+          </button>
+          <button class="nav-item" onclick="navigateTo('produtos')" data-page="produtos" id="produtosNavBtn">
+            <i data-lucide="package"></i> Produtos
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="user-profile">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <div class="user-info">
+              <div class="user-name" id="userName">Usuário</div>
+              <div class="user-role" id="userRole">carregando...</div>
+            </div>
+          </div>
+          <div class="footer-actions">
+            <button class="footer-btn" onclick="logout()"><i data-lucide="log-out"></i> Sair</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="main-content">
+
+        <!-- DASHBOARD -->
+        <section id="dashboardSection" class="page-section active">
+          <div class="page-header">
+            <h1>Dashboard de Forecast</h1>
+            <p>Visão geral das suas previsões de vendas</p>
+          </div>
+          <div class="info-bar" id="dashboardSource" style="display:none;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap;padding:12px 16px;border-radius:var(--radius-sm);background:rgba(190,142,87,0.08);border:1px solid rgba(190,142,87,0.2);">
+            <i data-lucide="file-spreadsheet"></i>
+            <span id="dashboardSourceText" style="font-size:13px;"></span>
+          </div>
+          <div class="empty-state" id="dashboardEmpty" style="text-align:center;padding:60px 20px;color:var(--text-secondary);">
+            <i data-lucide="bar-chart-3" style="width:48px;height:48px;"></i>
+            <p style="margin-top:12px;">Nenhuma previsão calculada ainda.</p>
+            <button class="btn btn-secondary" style="margin-top:12px;" onclick="navigateTo('calcular')"><i data-lucide="calculator"></i> Calcular Forecast</button>
+          </div>
+          <div id="dashboardContent" style="display:none;">
+            <div class="kpi-grid" id="dashboardKpis">
+              <div class="kpi-card"><div class="kpi-label">Total Previsto</div><div class="kpi-value" id="kpiTotalPrevisto">-</div><div class="kpi-sub">Para o ano da previsão</div></div>
+              <div class="kpi-card warning"><div class="kpi-label">Ano Anterior</div><div class="kpi-value" id="kpiTotalAnterior">-</div><div class="kpi-sub">Vendas do ano base</div></div>
+              <div class="kpi-card secondary"><div class="kpi-label">MAPE</div><div class="kpi-value" id="kpiMape">-</div><div class="kpi-sub">Mean Absolute Percentage Error</div></div>
+              <div class="kpi-card accent"><div class="kpi-label">WAPE</div><div class="kpi-value" id="kpiWape">-</div><div class="kpi-sub">Weighted Absolute Percentage Error</div></div>
+            </div>
+            <div class="chart-grid">
+              <div class="card">
+                <div class="card-header"><h2>Previsto vs Ano Anterior por Mês</h2></div>
+                <div class="card-body"><div class="chart-container"><canvas id="chartMensal"></canvas></div></div>
+              </div>
+              <div class="card">
+                <div class="card-header"><h2>Top 10 SKUs</h2></div>
+                <div class="card-body"><div class="chart-container"><canvas id="chartTopSkus"></canvas></div></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h2>Previsão por Regional</h2></div>
+              <div class="card-body" style="padding:0;">
+                <table class="data-table" id="regionalTable"></table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CALCULAR FORECAST -->
+        <section id="calcularSection" class="page-section">
+          <div class="page-header">
+            <h1>Calcular Nova Previsão</h1>
+            <p>O forecast é calculado a partir da base histórica armazenada no banco de dados (Supabase). Atualize a base sempre que a planilha do Google Drive mudar.</p>
+          </div>
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header"><h2>Base Histórica</h2></div>
+            <div class="card-body">
+              <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+                Importa a planilha mais recente do Google Drive (abas Base_Histórica_de_Vendas e Orçamento) para o banco de dados, criando um novo snapshot versionado. O cálculo de forecast usa sempre o snapshot mais recente.
+              </p>
+              <button type="button" class="btn btn-primary" id="btnAtualizarBase" onclick="atualizarBase()">
+                <i data-lucide="database"></i> Atualizar Base Histórica
+              </button>
+              <div id="snapshotResult" style="display:none;margin-top:16px;padding:16px;border-radius:var(--radius-sm);background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.2);"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2>Configuração do Cenário</h2></div>
+            <div class="card-body">
+              <form id="formCalcular" onsubmit="calcularPrevisao(event)">
+                <div class="form-group">
+                  <label>Nome do Cenário</label>
+                  <input class="form-control" type="text" name="nome_cenario" placeholder="Ex: Cenário Realista 2026" required />
+                </div>
+                <div class="form-group">
+                  <label>Descrição (opcional)</label>
+                  <input class="form-control" type="text" name="descricao" placeholder="Descrição do cenário" />
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Ano Base (histórico)</label>
+                    <select class="form-control" name="ano_base">
+                      <option value="2023">2023</option>
+                      <option value="2024">2024</option>
+                      <option value="2025" selected>2025</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Ano da Previsão</label>
+                    <select class="form-control" name="ano_previsao">
+                      <option value="2026" selected>2026</option>
+                      <option value="2027">2027</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-secondary" id="btnCalcular">
+                  <i data-lucide="calculator"></i> Calcular Forecast
+                </button>
+              </form>
+              <div id="calcularResult" style="display:none;margin-top:16px;padding:16px;border-radius:var(--radius-sm);background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.2);"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- USUÁRIOS (ADMIN) -->
+        <section id="usersSection" class="page-section">
+          <div class="page-header">
+            <h1>Gestão de Usuários</h1>
+            <p>Administre os usuários da sua empresa</p>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h2>Usuários</h2>
+              <button class="btn btn-primary btn-sm" onclick="showAddUserModal()"><i data-lucide="user-plus"></i> Novo</button>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div class="loading-state" id="usersLoading"><div class="spinner"></div> Carregando...</div>
+              <table class="data-table" id="usersTable" style="display:none;"></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- PRODUTOS (ADMIN) -->
+        <section id="produtosSection" class="page-section">
+          <div class="page-header">
+            <h1>Gestão de Produtos</h1>
+            <p>Catálogo de SKUs (Master Data)</p>
+          </div>
+          <div class="card">
+            <div class="card-header card-header-produtos">
+              <div class="card-header-title">
+                <div class="header-icon-wrapper">
+                  <i data-lucide="package"></i>
+                </div>
+                <div>
+                  <h2>Produtos</h2>
+                  <p class="header-subtitle-card">Catálogo de SKUs cadastrados</p>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="text" id="produtosSearch" class="form-control" style="max-width:280px;height:36px;padding:8px 14px;" placeholder="Buscar por código, descrição, família..." oninput="onProdutosSearch()" />
+                <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap;" onclick="openProdutoModal('create')"><i data-lucide="plus"></i> Novo Produto</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div class="loading-state" id="produtosLoading"><div class="spinner"></div> Carregando...</div>
+              <div style="overflow-x:auto;">
+                <table class="data-table" id="produtosTable" style="display:none;"></table>
+              </div>
+            </div>
+            <div id="produtosPagination" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-top:1px solid rgba(255,255,255,0.08);flex-wrap:wrap;">
+              <span id="produtosCount" style="font-size:13px;color:var(--text-secondary);"></span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="produtosPrev" onclick="changeProdutosPage(-1)"><i data-lucide="chevron-left"></i></button>
+                <span id="produtosPageInfo" style="font-size:13px;"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="produtosNext" onclick="changeProdutosPage(1)"><i data-lucide="chevron-right"></i></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ADD USER MODAL -->
+  <div class="modal-overlay" id="addUserModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Novo Usuário</h2>
+        <button class="modal-close" onclick="closeModal('addUserModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="formAddUser" onsubmit="addUser(event)">
+          <div class="form-group"><label>E-mail</label><input class="form-control" type="email" name="email" required /></div>
+          <div class="form-group"><label>Senha</label><input class="form-control" type="password" name="password" required minlength="6" /></div>
+          <div class="form-group"><label>Nome</label><input class="form-control" type="text" name="nome" required /></div>
+          <div class="form-group"><label>Função</label>
+            <select class="form-control" name="role">
+              <option value="user">Usuário</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+            <button type="button" class="btn btn-outline" onclick="closeModal('addUserModal')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="addUserSubmitBtn"><i data-lucide="user-plus"></i> Criar Usuário</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUTO MODAL (Master Data) -->
+  <div class="modal-overlay" id="produtoModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="produtoModalTitle">Novo Produto</h2>
+        <button class="modal-close" onclick="closeModal('produtoModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="formProduto" onsubmit="submitProduto(event)">
+          <div class="form-row">
+            <div class="form-group"><label>Código (ID)</label><input class="form-control" type="text" name="id_item" maxlength="50" required /></div>
+            <div class="form-group"><label>Número</label><input class="form-control" type="number" name="numero" /></div>
+          </div>
+          <div class="form-group"><label>Descrição</label><input class="form-control" type="text" name="descricao" maxlength="255" required /></div>
+          <div class="form-group"><label>Tipo de Mercado</label>
+            <select class="form-control" name="tipo_mercado">
+              <option value="">—</option>
+              <option value="MERCADO INTERNO">MERCADO INTERNO</option>
+              <option value="MERCADO EXTERNO">MERCADO EXTERNO</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Família TOTVS</label><input class="form-control" type="text" name="familia_totvs" maxlength="150" /></div>
+            <div class="form-group"><label>Família Comercial</label><input class="form-control" type="text" name="familia_comercial" maxlength="150" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Família Plan I</label><input class="form-control" type="text" name="familia_plan_i" maxlength="150" /></div>
+            <div class="form-group"><label>Família Plan II</label><input class="form-control" type="text" name="familia_plan_ii" maxlength="150" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Curva ABC (Estoque)</label>
+              <select class="form-control" name="curva_abc_est">
+                <option value="">—</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Curva ABC (Vendas)</label>
+              <select class="form-control" name="curva_abc_vendas">
+                <option value="">—</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="produtoSubmitBtn">Salvar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===========================
+    // CONFIGURAÇÃO
+    // ===========================
+    const SUPABASE_URL = "https://longflatworm-supabase.cloudfy.live";
+    const SUPABASE_ANON_KEY =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg";
+    const N8N_BASE = 'https://longflatworm-n8n.cloudfy.live/webhook/crs-forecast';
+
+    // Última previsão calculada (mantida em memória; sem persistência)
+    let lastForecast = null;
+
+    let sb = null;
+    let currentUser = null;
+    let chartMensal = null;
+    let chartTopSkus = null;
+
+    // ===========================
+    // SUPABASE INIT
+    // ===========================
+    function initSupabase() {
+      // A build UMD do supabase-js expõe o global window.supabase (biblioteca).
+      const lib = window.supabase;
+      if (!lib || !lib.createClient) {
+        console.error('Biblioteca supabase-js não carregada');
+        return false;
+      }
+      sb = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          storageKey: 'crs-brants-auth',
+          autoRefreshToken: true,
+          persistSession: true
+        }
+      });
+      return true;
+    }
+
+    // ===========================
+    // AUTH
+    // ===========================
+    async function checkAuth() {
+      if (!sb) initSupabase();
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        const meta = session.user.user_metadata || {};
+        const company = (meta.company_name || "").trim().toLowerCase();
+        if (company !== "crs_brants") {
+          console.warn(
+            "Acesso negado: empresa '" + company + "' não autorizada. Apenas CRS Brands."
+          );
+          await sb.auth.signOut();
+          currentUser = null;
+          document.getElementById('loginOverlay').style.display = 'flex';
+          document.getElementById('appContainer').style.display = 'none';
+          document.getElementById('loginError').textContent =
+            'Acesso não autorizado. Este sistema é exclusivo para CRS Brands.';
+          document.getElementById('loginError').style.display = 'block';
+          return false;
+        }
+        currentUser = session.user;
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
+        await loadUserProfile();
+        await navigateTo('dashboard');
+        return true;
+      }
+      document.getElementById('loginOverlay').style.display = 'flex';
+      document.getElementById('appContainer').style.display = 'none';
+      return false;
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+      const errorEl = document.getElementById('loginError');
+      errorEl.style.display = 'none';
+      
+      if (!email || !password) {
+        errorEl.textContent = 'Preencha e-mail e senha.';
+        errorEl.style.display = 'block';
+        return;
+      }
+      
+      document.getElementById('loginBtn').disabled = true;
+      document.getElementById('loginBtn').textContent = 'Entrando...';
+      
+      try {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        await checkAuth();
+      } catch (e) {
+        errorEl.textContent = e.message || 'Erro ao fazer login';
+        errorEl.style.display = 'block';
+      }
+      document.getElementById('loginBtn').disabled = false;
+      document.getElementById('loginBtn').textContent = 'Entrar';
+    });
+
+    let isRegisterMode = false;
+    document.getElementById('loginToggleLink').addEventListener('click', async () => {
+      isRegisterMode = !isRegisterMode;
+      document.getElementById('loginToggleText').textContent = isRegisterMode ? 'Já tem conta?' : 'Não tem conta?';
+      document.getElementById('loginToggleLink').textContent = isRegisterMode ? 'Fazer login' : 'Cadastre-se';
+      document.getElementById('loginBtn').textContent = isRegisterMode ? 'Cadastrar' : 'Entrar';
+    });
+
+    // ===========================
+    // VERIFICAÇÃO DE EMPRESA
+    // ===========================
+    async function verifyCompanyAccess() {
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session) {
+          console.warn("Sem sessão ativa");
+          return false;
+        }
+        const meta = session.user.user_metadata || {};
+        const company = (meta.company_name || "").trim().toLowerCase();
+        if (company !== "crs_brants") {
+          console.warn("Acesso negado: empresa '" + company + "' não autorizada.");
+          await sb.auth.signOut();
+          currentUser = null;
+          document.getElementById('loginOverlay').style.display = 'flex';
+          document.getElementById('appContainer').style.display = 'none';
+          document.getElementById('loginError').textContent = 'Acesso não autorizado. Este sistema é exclusivo para CRS Brands.';
+          document.getElementById('loginError').style.display = 'block';
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error("Erro ao verificar empresa:", err);
+        return false;
+      }
+    }
+
+    async function logout() {
+      await sb.auth.signOut();
+      currentUser = null;
+      document.getElementById('loginOverlay').style.display = 'flex';
+      document.getElementById('appContainer').style.display = 'none';
+    }
+
+    async function loadUserProfile() {
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return;
+      currentUser = user;
+      const meta = user.user_metadata || {};
+      const nome = meta.nome || user.email?.split('@')[0] || 'Usuário';
+      const role = meta.role || 'user';
+      document.getElementById('userName').textContent = nome;
+      document.getElementById('userRole').textContent = role === 'admin' ? 'Administrador' : 'Usuário';
+      document.getElementById('userAvatar').textContent = nome.charAt(0).toUpperCase();
+      document.getElementById('usersNavBtn').style.display = role === 'admin' ? 'flex' : 'none';
+      const produtosNavBtn = document.getElementById('produtosNavBtn');
+      if (produtosNavBtn) produtosNavBtn.style.display = role === 'admin' ? 'flex' : 'none';
+      window.currentUserRole = role;
+    }
+
+    // ===========================
+    // NAVEGAÇÃO
+    // ===========================
+    async function navigateTo(page) {
+      document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      
+      const sectionMap = {
+        dashboard: 'dashboardSection', calcular: 'calcularSection', usuarios: 'usersSection', produtos: 'produtosSection'
+      };
+      
+      const section = document.getElementById(sectionMap[page]);
+      if (section) section.classList.add('active');
+      
+      const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+      if (navItem) navItem.classList.add('active');
+      
+      lucide.createIcons();
+      
+      switch(page) {
+        case 'dashboard': await loadDashboard(); break;
+        case 'usuarios': await loadUsers(); break;
+        case 'produtos': await loadProdutos(); break;
+      }
+    }
+
+    // ===========================
+    // TOAST
+    // ===========================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
+      toast.innerHTML = `<i class="material-icons" style="font-size:20px;">${icons[type] || 'info'}</i> ${message}`;
+      container.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 4000);
+    }
+
+    // ===========================
+    // MODAL
+    // ===========================
+    function showModal(id) { document.getElementById(id).classList.add('active'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function showAddUserModal() { showModal('addUserModal'); }
+
+    // ===========================
+    // API CALLS
+    // ===========================
+    async function callN8n(endpoint, method = 'POST', body = null) {
+      const token = (await sb.auth.getSession()).data.session?.access_token;
+      const url = `${N8N_BASE}/${endpoint}`;
+      const options = { method, headers: { 'Content-Type': 'application/json' } };
+      if (token) options.headers['Authorization'] = `Bearer ${token}`;
+      if (body) options.body = JSON.stringify(body);
+      const response = await fetch(url, options);
+      return response.json();
+    }
+
+    // ===========================
+    // CALCULAR PREVISÃO (orquestra start → chunks → finalize → get)
+    // O n8n baixa a planilha 1×, persiste em Redis e processa em lotes (chunks)
+    // para não estourar a memória do task-runner. O front conduz o loop.
+    // ===========================
+    async function calcularPrevisao(event) {
+      event.preventDefault();
+      
+      if (!await verifyCompanyAccess()) {
+        showToast('Acesso não autorizado', 'error');
+        return;
+      }
+      
+      const form = document.getElementById('formCalcular');
+      const data = new FormData(form);
+      const btn = document.getElementById('btnCalcular');
+      const resultDiv = document.getElementById('calcularResult');
+      
+      btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Calculando...';
+      lucide.createIcons();
+
+      const setProgress = (msg) => {
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><i data-lucide="loader"></i><span>${msg}</span></div>`;
+        lucide.createIcons();
+      };
+      
+      try {
+        const { data: { user } } = await sb.auth.getUser();
+        const company_name = user.user_metadata?.company_name || user.email?.split('@')[1]?.split('.')[0] || 'default';
+        
+        // 1) start — lê cabeçalho + orçamento + contagem de linhas (não carrega a base inteira)
+        setProgress('Lendo planilha do Google Drive...');
+        const startRes = await callN8n('calcular-previsao', 'POST', {
+          phase: 'start',
+          user_id: user.id,
+          company_name: company_name,
+          nome_cenario: data.get('nome_cenario'),
+          descricao: data.get('descricao') || '',
+          ano_base: parseInt(data.get('ano_base')),
+          ano_previsao: parseInt(data.get('ano_previsao'))
+        });
+        if (!startRes || startRes.ok === false) {
+          throw new Error((startRes && startRes.error) || 'Falha ao iniciar (start).');
+        }
+        const totalRows = startRes.totalRows || 0;
+        const chunkSize = startRes.rowChunkSize || 2000;
+
+        // 2) chunks — lê o histórico em fatias de linhas e agrega até esgotar
+        let offset = 0;
+        for (let i = 0; i < 5000; i++) {
+          const ck = await callN8n('calcular-previsao', 'POST', {
+            phase: 'chunk', rowOffset: offset, rowLimit: chunkSize
+          });
+          if (!ck || ck.ok === false) {
+            throw new Error((ck && ck.error) || 'Falha ao processar um lote (chunk).');
+          }
+          offset = ck.nextOffset != null ? ck.nextOffset : offset + chunkSize;
+          const tot = ck.totalRows || totalRows;
+          const done = tot > 0 ? Math.min(offset, tot) : offset;
+          const pct = tot > 0 ? Math.min(100, Math.round(done / tot * 100)) : 100;
+          setProgress(tot > 0
+            ? `Processando previsão... ${pct}% (${done}/${tot} linhas)`
+            : `Processando previsão... ${done} linhas`);
+          if (!ck.hasMore) break;
+        }
+
+        // 3) finalize — consolida o agregado no envelope final
+        setProgress('Consolidando resultados...');
+        const fin = await callN8n('calcular-previsao', 'POST', { phase: 'finalize' });
+        if (!fin || fin.ok === false) {
+          throw new Error((fin && fin.error) || 'Falha ao consolidar (finalize).');
+        }
+
+        // 4) get — recupera o envelope do Redis
+        const result = await callN8n('calcular-previsao', 'POST', { phase: 'get' });
+        
+        if (result.success) {
+          lastForecast = result;
+          const kpis = result.kpis || {};
+          resultDiv.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+              <span style="font-size:24px;">✅</span>
+              <strong style="font-size:1.1rem;">Forecast calculado com sucesso!</strong>
+            </div>
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+              Fonte: <strong>${result.source?.file_name || '-'}</strong>${result.cenario?.base_orcamento ? ' • baseado no orçamento' : ' • baseado no histórico'}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:12px;">
+              <div><strong>Total Previsto:</strong> ${(kpis.total_previsto || 0).toLocaleString('pt-BR')}</div>
+              <div><strong>MAPE:</strong> ${kpis.mape !== null && kpis.mape !== undefined ? (kpis.mape * 100).toFixed(2) + '%' : 'N/A'}</div>
+              <div><strong>WAPE:</strong> ${kpis.wape !== null && kpis.wape !== undefined ? (kpis.wape * 100).toFixed(2) + '%' : 'N/A'}</div>
+              <div><strong>Accuracy:</strong> ${kpis.forecast_accuracy !== null && kpis.forecast_accuracy !== undefined ? (kpis.forecast_accuracy * 100).toFixed(2) + '%' : 'N/A'}</div>
+            </div>
+            <button class="btn btn-secondary" style="margin-top:16px;" onclick="navigateTo('dashboard')"><i data-lucide="bar-chart-3"></i> Ver no Dashboard</button>
+          `;
+          resultDiv.style.display = 'block';
+          lucide.createIcons();
+          showToast(`Forecast "${data.get('nome_cenario')}" concluído!`, 'success');
+          renderDashboard();
+        } else {
+          resultDiv.innerHTML = `<div style="color:var(--color-error);"><strong>❌ Erro:</strong> ${result.error || 'Erro desconhecido'}</div>`;
+          resultDiv.style.display = 'block';
+          showToast('Erro ao calcular forecast: ' + (result.error || 'Erro desconhecido'), 'error');
+        }
+      } catch(e) {
+        showToast('Erro de conexão: ' + e.message, 'error');
+      }
+      btn.disabled = false; btn.innerHTML = '<i data-lucide="calculator"></i> Calcular Forecast';
+      lucide.createIcons();
+    }
+
+    // ===========================
+    // ATUALIZAR BASE HISTÓRICA (snapshot da planilha -> Supabase)
+    // Baixa o xlsx do Drive, grava em historico_vendas/orcamento como um
+    // novo snapshot versionado e o marca como atual.
+    // ===========================
+    async function atualizarBase() {
+      if (!await verifyCompanyAccess()) {
+        showToast('Acesso não autorizado', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btnAtualizarBase');
+      const resultDiv = document.getElementById('snapshotResult');
+      const anoPrevSel = document.querySelector('#formCalcular [name="ano_previsao"]');
+      const anoBaseSel = document.querySelector('#formCalcular [name="ano_base"]');
+      const ano_previsao = anoPrevSel ? parseInt(anoPrevSel.value) : (new Date().getFullYear() + 1);
+      const ano_base = anoBaseSel ? parseInt(anoBaseSel.value) : null;
+
+      btn.disabled = true; btn.innerHTML = '<i data-lucide="loader"></i> Importando...';
+      lucide.createIcons();
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><i data-lucide="loader"></i><span>Baixando planilha do Google Drive e gravando no banco...</span></div>`;
+      lucide.createIcons();
+
+      try {
+        const { data: { user } } = await sb.auth.getUser();
+        const company_name = user.user_metadata?.company_name || user.email?.split('@')[1]?.split('.')[0] || 'default';
+
+        const res = await callN8n('snapshot-base', 'POST', {
+          user_id: user.id,
+          company_name: company_name,
+          ano_base: ano_base,
+          ano_previsao: ano_previsao
+        });
+
+        if (!res || res.ok === false) {
+          throw new Error((res && res.error) || 'Falha ao atualizar a base.');
+        }
+
+        resultDiv.innerHTML = `
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <span style="font-size:24px;">✅</span>
+            <strong style="font-size:1.05rem;">Base histórica atualizada!</strong>
+          </div>
+          <div style="font-size:13px;color:var(--text-secondary);">
+            ${(res.total_rows || 0).toLocaleString('pt-BR')} linhas de histórico • 
+            ${(res.total_orcamento || 0).toLocaleString('pt-BR')} itens de orçamento • 
+            anos: ${(res.anos || []).join(', ') || '-'}
+          </div>
+        `;
+        showToast('Base histórica atualizada com sucesso!', 'success');
+      } catch (e) {
+        resultDiv.innerHTML = `<div style="color:var(--color-error);"><strong>❌ Erro:</strong> ${e.message}</div>`;
+        showToast('Erro ao atualizar base: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false; btn.innerHTML = '<i data-lucide="database"></i> Atualizar Base Histórica';
+        lucide.createIcons();
+      }
+    }
+
+    // ===========================
+    // DASHBOARD (renderiza a última previsão em memória)
+    // ===========================
+    async function loadDashboard() {
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      const sourceBar = document.getElementById('dashboardSource');
+      const emptyState = document.getElementById('dashboardEmpty');
+      const content = document.getElementById('dashboardContent');
+
+      if (!lastForecast || !lastForecast.success) {
+        if (sourceBar) sourceBar.style.display = 'none';
+        if (emptyState) emptyState.style.display = '';
+        if (content) content.style.display = 'none';
+        return;
+      }
+
+      const fc = lastForecast;
+      const kpis = fc.kpis || {};
+
+      if (emptyState) emptyState.style.display = 'none';
+      if (content) content.style.display = '';
+      if (sourceBar) {
+        sourceBar.style.display = 'flex';
+        const cen = fc.cenario || {};
+        const src = fc.source || {};
+        const base = cen.base_orcamento ? 'orçamento' : 'histórico';
+        document.getElementById('dashboardSourceText').innerHTML =
+          `Cenário: <strong>${cen.nome || '-'}</strong> • ${cen.ano_base || '-'} → ${cen.ano_previsao || '-'} • base: ${base} • Planilha: <strong>${src.file_name || '-'}</strong>`;
+      }
+      lucide.createIcons();
+
+      // KPIs
+      document.getElementById('kpiTotalPrevisto').textContent = (kpis.total_previsto || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      document.getElementById('kpiTotalAnterior').textContent = (kpis.total_anterior || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      document.getElementById('kpiMape').textContent = (kpis.mape !== null && kpis.mape !== undefined) ? (kpis.mape * 100).toFixed(2) + '%' : 'N/A';
+      document.getElementById('kpiWape').textContent = (kpis.wape !== null && kpis.wape !== undefined) ? (kpis.wape * 100).toFixed(2) + '%' : 'N/A';
+
+      // Reset charts
+      if (chartMensal) { chartMensal.destroy(); chartMensal = null; }
+      if (chartTopSkus) { chartTopSkus.destroy(); chartTopSkus = null; }
+
+      // Gráfico mensal
+      const labels = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+      const mensal = fc.mensal || [];
+      const previstoData = labels.map((_, i) => mensal[i]?.previsto || 0);
+      const anteriorData = labels.map((_, i) => mensal[i]?.anterior || 0);
+      const cen = fc.cenario || {};
+
+      const ctx1 = document.getElementById('chartMensal').getContext('2d');
+      chartMensal = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Previsto' + (cen.ano_previsao ? ' (' + cen.ano_previsao + ')' : ''), data: previstoData, backgroundColor: 'rgba(140,101,57,0.85)', borderRadius: 4 },
+            { label: 'Ano Anterior' + (cen.ano_base ? ' (' + cen.ano_base + ')' : ''), data: anteriorData, backgroundColor: 'rgba(190,142,87,0.5)', borderRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { grid: { display: false } } }
+        }
+      });
+
+      // Top 10 SKUs
+      const topSkus = (fc.top_skus || []).slice(0, 10);
+      if (topSkus.length > 0) {
+        const ctx2 = document.getElementById('chartTopSkus').getContext('2d');
+        const colors = ['#8c6539','#be8e57','#a8763f','#d4a76a','#6e4f2b','#c9975a','#7d5a32','#e0b87c','#5c4226','#b88a4e'];
+        chartTopSkus = new Chart(ctx2, {
+          type: 'doughnut',
+          data: {
+            labels: topSkus.map(s => (s.descricao || s.item || 'SKU').toString().substring(0, 22)),
+            datasets: [{ data: topSkus.map(s => s.total_previsto || 0), backgroundColor: colors.slice(0, topSkus.length) }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
+          }
+        });
+      }
+
+      // Tabela por regional
+      const regTable = document.getElementById('regionalTable');
+      const porRegional = fc.por_regional || [];
+      let regHtml = '<thead><tr><th>Regional</th><th class="numeric">Total Previsto</th><th class="numeric">Ano Anterior</th><th class="numeric">Diferença</th><th class="numeric">Itens</th></tr></thead><tbody>';
+      if (porRegional.length === 0) {
+        regHtml += '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-secondary);">Sem dados por regional</td></tr>';
+      } else {
+        porRegional.forEach(r => {
+          const diff = r.diferenca || 0;
+          const diffClass = diff >= 0 ? 'var(--color-success)' : 'var(--color-error)';
+          regHtml += `<tr>
+            <td><strong>${r.nome_regional || r.regional || '-'}</strong></td>
+            <td class="numeric">${(r.previsto || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+            <td class="numeric">${(r.anterior || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+            <td class="numeric" style="color:${diffClass};">${diff >= 0 ? '+' : ''}${diff.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+            <td class="numeric">${r.itens || 0}</td>
+          </tr>`;
+        });
+      }
+      regHtml += '</tbody>';
+      regTable.innerHTML = regHtml;
+      regTable.style.display = '';
+    }
+
+    // ===========================
+    // PRODUTOS (Master Data) — lista via RPC crs_brands_get_produtos
+    // ===========================
+    function escapeHtmlProd(v) {
+      if (v === null || v === undefined) return '';
+      return String(v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderProdutos(produtos) {
+      produtosAll = Array.isArray(produtos) ? produtos : [];
+      onProdutosSearch();
+    }
+
+    const PRODUTOS_PAGE_SIZE = 50;
+    let produtosAll = [];
+    let produtosFiltered = [];
+    let produtosPage = 1;
+
+    function matchProduto(p, q) {
+      if (!q) return true;
+      const hay = [
+        p.id_item, p.descricao, p.tipo_mercado,
+        p.familia_totvs, p.familia_comercial, p.familia_plan_i, p.familia_plan_ii,
+        p.curva_abc_est, p.curva_abc_vendas, p.numero
+      ].map(v => (v === null || v === undefined) ? '' : String(v).toLowerCase()).join(' | ');
+      return hay.includes(q);
+    }
+
+    function onProdutosSearch() {
+      const el = document.getElementById('produtosSearch');
+      const q = (el && el.value ? el.value : '').trim().toLowerCase();
+      produtosFiltered = produtosAll.filter(p => matchProduto(p, q));
+      produtosPage = 1;
+      renderProdutosPage();
+    }
+
+    function changeProdutosPage(delta) {
+      const totalPages = Math.max(1, Math.ceil(produtosFiltered.length / PRODUTOS_PAGE_SIZE));
+      produtosPage = Math.min(totalPages, Math.max(1, produtosPage + delta));
+      renderProdutosPage();
+    }
+
+    function renderProdutosPage() {
+      const table = document.getElementById('produtosTable');
+      const pag = document.getElementById('produtosPagination');
+      const total = produtosFiltered.length;
+      const totalPages = Math.max(1, Math.ceil(total / PRODUTOS_PAGE_SIZE));
+      if (produtosPage > totalPages) produtosPage = totalPages;
+      const start = (produtosPage - 1) * PRODUTOS_PAGE_SIZE;
+      const pageItems = produtosFiltered.slice(start, start + PRODUTOS_PAGE_SIZE);
+
+      if (total === 0) {
+        table.innerHTML = '<tr><td style="text-align:center;padding:40px;color:var(--text-secondary);">Nenhum produto encontrado</td></tr>';
+        table.style.display = '';
+        pag.style.display = 'none';
+        return;
+      }
+
+      let html = '<thead><tr>'
+        + '<th>Código</th><th>Descrição</th><th>Tipo de Mercado</th>'
+        + '<th>Família TOTVS</th><th>Família Comercial</th><th>Família Plan I</th><th>Família Plan II</th>'
+        + '<th class="numeric">ABC Est.</th><th class="numeric">ABC Vendas</th><th class="numeric">Número</th>'
+        + '<th class="numeric">Ações</th>'
+        + '</tr></thead><tbody>';
+      pageItems.forEach(p => {
+        html += `<tr>
+          <td><strong>${escapeHtmlProd(p.id_item)}</strong></td>
+          <td>${escapeHtmlProd(p.descricao)}</td>
+          <td>${escapeHtmlProd(p.tipo_mercado)}</td>
+          <td>${escapeHtmlProd(p.familia_totvs)}</td>
+          <td>${escapeHtmlProd(p.familia_comercial)}</td>
+          <td>${escapeHtmlProd(p.familia_plan_i)}</td>
+          <td>${escapeHtmlProd(p.familia_plan_ii)}</td>
+          <td class="numeric">${escapeHtmlProd(p.curva_abc_est)}</td>
+          <td class="numeric">${escapeHtmlProd(p.curva_abc_vendas)}</td>
+          <td class="numeric">${escapeHtmlProd(p.numero)}</td>
+          <td class="numeric"><button type="button" class="btn btn-secondary btn-sm" data-id="${escapeHtmlProd(p.id_item)}" onclick="editProdutoFromBtn(this)" title="Editar"><i data-lucide="pencil"></i></button></td>
+        </tr>`;
+      });
+      html += '</tbody>';
+      table.innerHTML = html;
+      table.style.display = '';
+
+      const from = start + 1;
+      const to = start + pageItems.length;
+      document.getElementById('produtosCount').textContent = `${from}–${to} de ${total} registro(s)`;
+      document.getElementById('produtosPageInfo').textContent = `Página ${produtosPage} de ${totalPages}`;
+      document.getElementById('produtosPrev').disabled = produtosPage <= 1;
+      document.getElementById('produtosNext').disabled = produtosPage >= totalPages;
+      pag.style.display = 'flex';
+      lucide.createIcons();
+    }
+
+    async function loadProdutos() {
+      const loading = document.getElementById('produtosLoading');
+      const table = document.getElementById('produtosTable');
+      loading.style.display = 'flex';
+      table.style.display = 'none';
+      try {
+        // REGRA DE ARQUITETURA: comunicacao EXCLUSIVAMENTE via RPC com fetch().
+        const token = (await sb.auth.getSession()).data.session?.access_token;
+        const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/crs_brands_get_produtos`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({})
+        });
+        loading.style.display = 'none';
+        if (!resp.ok) {
+          const err = await resp.text();
+          table.innerHTML = `<tr><td style="text-align:center;padding:40px;color:var(--color-error);">Erro ao carregar produtos: ${escapeHtmlProd(err)}</td></tr>`;
+          table.style.display = '';
+          return;
+        }
+        const produtos = await resp.json();
+        renderProdutos(produtos);
+      } catch (e) {
+        loading.style.display = 'none';
+        table.innerHTML = `<tr><td style="text-align:center;padding:40px;color:var(--color-error);">Erro: ${escapeHtmlProd(e.message)}</td></tr>`;
+        table.style.display = '';
+      }
+    }
+
+    // ===========================
+    // PRODUTO MODAL (criar / editar) — req. 4.2
+    // ===========================
+    let produtoEditMode = false;
+
+    function openProdutoModal(mode, produto) {
+      try {
+        produtoEditMode = (mode === 'edit');
+        const form = document.getElementById('formProduto');
+        if (!form) {
+          console.error('Formulário formProduto não encontrado!');
+          showToast('Erro: formulário não encontrado', 'error');
+          return;
+        }
+        form.reset();
+        document.getElementById('produtoModalTitle').textContent =
+          produtoEditMode ? 'Editar Produto' : 'Novo Produto';
+
+        const idInput = form.elements['id_item'];
+        const tipoSel = form.elements['tipo_mercado'];
+        // Garante que o valor atual (mesmo fora das opcoes padrao) apareca no select.
+        const setTipo = (val) => {
+          if (val && ![...tipoSel.options].some(o => o.value === val)) {
+            const opt = document.createElement('option');
+            opt.value = val; opt.textContent = val;
+            tipoSel.appendChild(opt);
+          }
+          tipoSel.value = val || '';
+        };
+
+        if (produtoEditMode && produto) {
+          idInput.value = produto.id_item || '';
+          idInput.disabled = true; // chave nao pode ser alterada na edicao
+          form.elements['descricao'].value = produto.descricao || '';
+          setTipo(produto.tipo_mercado || '');
+          form.elements['familia_totvs'].value = produto.familia_totvs || '';
+          form.elements['familia_comercial'].value = produto.familia_comercial || '';
+          form.elements['familia_plan_i'].value = produto.familia_plan_i || '';
+          form.elements['familia_plan_ii'].value = produto.familia_plan_ii || '';
+          form.elements['curva_abc_est'].value = produto.curva_abc_est || '';
+          form.elements['curva_abc_vendas'].value = produto.curva_abc_vendas || '';
+          form.elements['numero'].value =
+            (produto.numero === null || produto.numero === undefined) ? '' : produto.numero;
+        } else {
+          idInput.disabled = false;
+          setTipo('');
+        }
+
+        showModal('produtoModal');
+        lucide.createIcons();
+      } catch (error) {
+        console.error('Erro ao abrir modal de produto:', error);
+        showToast('Erro ao abrir modal: ' + error.message, 'error');
+      }
+    }
+
+    function editProdutoFromBtn(btn) {
+      const id = btn.dataset.id;
+      console.log('Editando produto ID:', id);
+      console.log('Produtos disponíveis:', produtosAll.length);
+      const produto = produtosAll.find(p => String(p.id_item) === String(id));
+      console.log('Produto encontrado:', produto);
+      if (produto) {
+        openProdutoModal('edit', produto);
+      } else {
+        showToast('Produto não encontrado', 'error');
+      }
+    }
+
+    async function submitProduto(event) {
+      event.preventDefault();
+      const form = document.getElementById('formProduto');
+      const submitBtn = document.getElementById('produtoSubmitBtn');
+      const norm = (v) => {
+        v = (v === null || v === undefined) ? '' : String(v).trim();
+        return v === '' ? null : v;
+      };
+      const numeroStr = (form.elements['numero'].value || '').trim();
+
+      const payload = {
+        p_id_item: norm(form.elements['id_item'].value),
+        p_descricao: norm(form.elements['descricao'].value),
+        p_tipo_mercado: norm(form.elements['tipo_mercado'].value),
+        p_familia_totvs: norm(form.elements['familia_totvs'].value),
+        p_familia_comercial: norm(form.elements['familia_comercial'].value),
+        p_familia_plan_i: norm(form.elements['familia_plan_i'].value),
+        p_familia_plan_ii: norm(form.elements['familia_plan_ii'].value),
+        p_curva_abc_est: norm(form.elements['curva_abc_est'].value),
+        p_curva_abc_vendas: norm(form.elements['curva_abc_vendas'].value),
+        p_numero: numeroStr === '' ? null : parseInt(numeroStr, 10)
+      };
+
+      if (!payload.p_id_item || !payload.p_descricao) {
+        showToast('Código e Descrição são obrigatórios', 'error');
+        return;
+      }
+
+      const rpc = produtoEditMode ? 'crs_brands_update_produto' : 'crs_brands_insert_produto';
+      submitBtn.disabled = true;
+      try {
+        // REGRA DE ARQUITETURA: insert/update SOMENTE via RPC com fetch().
+        const token = (await sb.auth.getSession()).data.session?.access_token;
+        const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpc}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          let msg = errText;
+          try { const j = JSON.parse(errText); msg = j.message || j.hint || errText; } catch (_) {}
+          throw new Error(msg);
+        }
+
+        closeModal('produtoModal');
+        showToast(produtoEditMode ? 'Produto atualizado com sucesso' : 'Produto criado com sucesso', 'success');
+        await loadProdutos();
+      } catch (e) {
+        showToast('Erro ao salvar: ' + e.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+
+    // ===========================
+    // USUÁRIOS (ADMIN)
+    // ===========================
+    async function loadUsers() {
+      if (window.currentUserRole !== 'admin') {
+        document.getElementById('usersTable').style.display = '';
+        document.getElementById('usersTable').innerHTML = '<tr><td style="text-align:center;padding:40px;color:var(--text-secondary);">Apenas administradores podem gerenciar usuários.</td></tr>';
+        document.getElementById('usersLoading').style.display = 'none';
+        return;
+      }
+      
+      const loading = document.getElementById('usersLoading');
+      const table = document.getElementById('usersTable');
+      loading.style.display = 'flex';
+      table.style.display = 'none';
+      
+      try {
+        const { data: { user } } = await sb.auth.getUser();
+        
+        // List users via admin function (sem parâmetros - filtra automaticamente por crs_brants)
+        const { data: users, error } = await sb.rpc('crs_brants_admin_list_users');
+        
+        loading.style.display = 'none';
+        
+        if (error) {
+          table.innerHTML = `<tr><td style="text-align:center;padding:40px;color:var(--color-error);">Erro: ${error.message}</td></tr>`;
+          table.style.display = '';
+          return;
+        }
+        
+        const userList = users || [];
+        if (userList.length === 0) {
+          table.innerHTML = '<tr><td style="text-align:center;padding:40px;color:var(--text-secondary);">Nenhum usuário encontrado</td></tr>';
+          table.style.display = '';
+          return;
+        }
+        
+        let html = '<thead><tr><th>Nome</th><th>E-mail</th><th>Função</th><th class="numeric">Ações</th></tr></thead><tbody>';
+        userList.forEach(u => {
+          const isSelf = u.user_id === user.id;
+          html += `<tr>
+            <td><strong>${u.full_name || u.email?.split('@')[0] || 'Usuário'}</strong></td>
+            <td>${u.email || '-'}</td>
+            <td><span class="status-badge" style="${u.role === 'admin' ? 'background:rgba(10,31,92,0.12);color:var(--color-primary);' : ''}">${u.role || 'visualizador'}</span></td>
+            <td class="numeric">
+              ${!isSelf ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.user_id}')"><i data-lucide="trash-2"></i></button>` : '<span style="font-size:12px;color:var(--text-secondary);">Você</span>'}
+            </td>
+          </tr>`;
+        });
+        html += '</tbody>';
+        table.innerHTML = html;
+        table.style.display = '';
+        lucide.createIcons();
+      } catch(e) {
+        loading.style.display = 'none';
+        table.innerHTML = '<tr><td style="text-align:center;padding:40px;color:var(--color-error);">Erro: ' + e.message + '</td></tr>';
+        table.style.display = '';
+      }
+    }
+
+    async function deleteUser(userId) {
+      if (!confirm('Tem certeza que deseja remover este usuário?')) return;
+      try {
+        const { error } = await sb.rpc('crs_brants_admin_delete_user', { p_user_id: userId });
+        if (error) throw error;
+        showToast('Usuário removido', 'success');
+        await loadUsers();
+      } catch(e) {
+        showToast('Erro: ' + e.message, 'error');
+      }
+    }
+
+    async function addUser(event) {
+      event.preventDefault();
+      const form = document.getElementById('formAddUser');
+      const data = new FormData(form);
+      const submitBtn = document.getElementById('addUserSubmitBtn');
+      
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i data-lucide="loader"></i> Criando...';
+      lucide.createIcons();
+      
+      try {
+        // Criar usuário via Supabase Auth
+        const { data: newUser, error } = await sb.auth.signUp({
+          email: data.get('email'),
+          password: data.get('password'),
+          options: {
+            data: {
+              full_name: data.get('nome'),
+              role: data.get('role') || 'visualizador',
+              company_name: 'crs_brants'
+            }
+          }
+        });
+        
+        if (error) throw error;
+        showToast('Usuário criado com sucesso!', 'success');
+        closeModal('addUserModal');
+        form.reset();
+        await loadUsers();
+      } catch(e) {
+        showToast('Erro: ' + e.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i data-lucide="user-plus"></i> Criar Usuário';
+        lucide.createIcons();
+      }
+    }
+
+    // ===========================
+    // INIT
+    // ===========================
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!initSupabase()) {
+        document.getElementById('loginError').textContent = 'Erro ao carregar Supabase. Recarregue a página.';
+        document.getElementById('loginError').style.display = 'block';
+        return;
+      }
+      
+      await checkAuth();
+      
+      // Check URL hash for direct navigation
+      const hash = window.location.hash.replace('#', '');
+      if (hash && ['dashboard','calcular','usuarios'].includes(hash)) {
+        await navigateTo(hash);
+      }
+    });
+  </script>
+</body>
+</html>

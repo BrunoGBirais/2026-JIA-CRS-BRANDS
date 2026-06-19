@@ -1,0 +1,390 @@
+{
+  "name": "CRS-Forecast-Calcular-Previsao v3 (xlsx download+extract)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crs-forecast/calcular-previsao",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [-1200, 0]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}", "rightValue": "start", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}", "rightValue": "chunk", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chunk"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}", "rightValue": "finalize", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "finalize"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}", "rightValue": "get", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "get"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "0" }
+      },
+      "id": "phase-switch",
+      "name": "Phase Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-1000, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first() ? $input.first().json : {};\nconst body = (input && input.body) || input || {};\nreturn [{\n  json: {\n    nome_cenario: body.nome_cenario || ('Forecast ' + (body.ano_previsao || 2026)),\n    descricao: body.descricao || '',\n    ano_base: parseInt(body.ano_base, 10) || 2025,\n    ano_previsao: parseInt(body.ano_previsao, 10) || 2026\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-760, -320]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "limit": 50,
+        "filter": { "folderId": { "__rl": true, "value": "1JjqIUh4zT7U5IhK5CQ8wdOHcPy95JEer", "mode": "id" } },
+        "options": { "fields": ["*"] }
+      },
+      "id": "drive-list",
+      "name": "List Drive Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-560, -320],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": { "googleDriveOAuth2Api": { "id": "1yxLK6IGIPQiU21B", "name": "Google Drive account" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst xlsx = items.filter(f => {\n  const name = (f.name || '').toLowerCase();\n  const mime = (f.mimeType || '').toLowerCase();\n  return name.endsWith('.xlsx') || mime.includes('spreadsheetml') || mime.includes('vnd.google-apps.spreadsheet');\n});\nif (xlsx.length === 0) {\n  throw new Error('Nenhuma planilha encontrada na pasta do Google Drive.');\n}\nxlsx.sort((a, b) => {\n  const da = new Date(a.modifiedTime || a.createdTime || 0).getTime();\n  const db = new Date(b.modifiedTime || b.createdTime || 0).getTime();\n  return db - da;\n});\nconst latest = xlsx[0];\nreturn [{ json: { file_id: latest.id, file_name: latest.name, modified_time: latest.modifiedTime || null } }];"
+      },
+      "id": "pick-latest",
+      "name": "Pick Latest XLSX",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, -320]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": { "__rl": true, "value": "={{ $json.file_id }}", "mode": "id" },
+        "options": {}
+      },
+      "id": "download-file",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-160, -320],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": { "googleDriveOAuth2Api": { "id": "1yxLK6IGIPQiU21B", "name": "Google Drive account" } }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data",
+        "options": { "sheetName": "Base_Histórica_de_Vendas" }
+      },
+      "id": "extract-base",
+      "name": "Extract Base",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [80, -440]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data",
+        "options": { "sheetName": "={{ 'Orçamento_' + ($('Validate Input').first().json.ano_previsao || 2026) }}" }
+      },
+      "id": "extract-orcamento",
+      "name": "Extract Orcamento",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [80, -200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== START (single-pass): baixa o xlsx, extrai base + orçamento e agrega tudo =====\n// xlsx não permite leitura em fatias por API; baixamos e parseamos 1x.\n// 'Extract Base' e 'Extract Orcamento' entregam linhas como objetos {coluna: valor}.\nconst params = $('Validate Input').first().json;\nconst anoBase = Number(params.ano_base) || 2025;\nconst anoPrev = Number(params.ano_previsao) || 2026;\nconst picked = $('Pick Latest XLSX').first().json;\n\nfunction rowsOf(node) {\n  try { return $(node).all().map(i => i.json).filter(Boolean); } catch (e) { return []; }\n}\nconst baseRows = rowsOf('Extract Base');\nconst orcRows = rowsOf('Extract Orcamento');\n\nconst norm = (s) => (s === undefined || s === null) ? '' : String(s).trim();\nconst num = (v) => {\n  if (typeof v === 'number') return isNaN(v) ? 0 : v;\n  if (v === undefined || v === null || v === '') return 0;\n  const n = parseFloat(String(v).replace(/\\s/g, '').replace(',', '.'));\n  return isNaN(n) ? 0 : n;\n};\nconst flat = (s) => String(s).toLowerCase().replace(/\\s+/g, '');\nfunction keyFor(obj, names) {\n  const keys = Object.keys(obj || {});\n  for (const n of names) { const k = keys.find(h => flat(h) === flat(n)); if (k) return k; }\n  for (const n of names) { const k = keys.find(h => String(h).toLowerCase().includes(n.toLowerCase())); if (k) return k; }\n  return null;\n}\n\n// ---- orçamento (aba pequena) ----\nconst budget = {};\nif (orcRows.length) {\n  const sample = orcRows[0];\n  const ok = {\n    item: keyFor(sample, ['Item', 'SKU']),\n    regional: keyFor(sample, ['Regional']),\n    descricao: keyFor(sample, ['Descrição', 'Descricao']),\n    nomeReg: keyFor(sample, ['Nome Regional', 'Nome_Regional']),\n    orc: keyFor(sample, ['Orçamento Total', 'Orcamento Total', 'Orçamento', 'Orcamento', 'Total', 'Budget'])\n  };\n  for (const row of orcRows) {\n    const item = norm(ok.item ? row[ok.item] : '');\n    const regional = norm(ok.regional ? row[ok.regional] : '');\n    if (!item || !regional) continue;\n    budget[item + '||' + regional] = {\n      item, regional,\n      descricao: ok.descricao ? norm(row[ok.descricao]) : '',\n      nome_regional: ok.nomeReg ? norm(row[ok.nomeReg]) : '',\n      annual: num(ok.orc ? row[ok.orc] : 0)\n    };\n  }\n}\n\n// ---- histórico: agrega por item||regional (somente ano base) ----\nconst keyAgg = {};\nlet processed = 0;\nif (baseRows.length) {\n  const sample = baseRows[0];\n  const bk = {\n    item: keyFor(sample, ['Item', 'SKU']),\n    regional: keyFor(sample, ['Regional']),\n    mes: keyFor(sample, ['Mês', 'Mes']),\n    ano: keyFor(sample, ['Ano']),\n    qtd: keyFor(sample, ['Quantidade', 'Qtd', 'Qtde']),\n    descricao: keyFor(sample, ['Descrição', 'Descricao']),\n    nomeReg: keyFor(sample, ['Nome Regional', 'Nome_Regional'])\n  };\n  for (const row of baseRows) {\n    if (!row) continue;\n    const item = norm(bk.item ? row[bk.item] : '');\n    const regional = norm(bk.regional ? row[bk.regional] : '');\n    if (!item || !regional) continue;\n    const mes = parseInt(bk.mes ? row[bk.mes] : '', 10);\n    const ano = parseInt(bk.ano ? row[bk.ano] : '', 10);\n    if (!(mes >= 1 && mes <= 12)) continue;\n    if (bk.ano && ano && ano !== anoBase) continue;\n    const qtd = num(bk.qtd ? row[bk.qtd] : 0);\n    const k = item + '||' + regional;\n    let e = keyAgg[k];\n    if (!e) { e = keyAgg[k] = { item, regional, descricao: '', nome_regional: '', meses: [0,0,0,0,0,0,0,0,0,0,0,0,0], total: 0 }; }\n    if (!e.descricao && bk.descricao) e.descricao = norm(row[bk.descricao]);\n    if (!e.nome_regional && bk.nomeReg) e.nome_regional = norm(row[bk.nomeReg]);\n    e.meses[mes] += qtd;\n    e.total += qtd;\n    processed++;\n  }\n}\n\nconst meta = {\n  file_id: picked.file_id,\n  source: { file_name: picked.file_name || null, modified_time: picked.modified_time || null },\n  cenario: {\n    nome: params.nome_cenario, descricao: params.descricao,\n    ano_base: anoBase, ano_previsao: anoPrev,\n    base_orcamento: Object.keys(budget).length > 0\n  },\n  ano_base: anoBase,\n  ano_previsao: anoPrev,\n  budget: budget,\n  total_rows: baseRows.length\n};\nreturn [{ json: {\n  metaStr: JSON.stringify(meta),\n  keyAggStr: JSON.stringify(keyAgg),\n  totalRows: baseRows.length,\n  processedRows: processed,\n  rowChunkSize: 100000\n} }];"
+      },
+      "id": "build-aggregate",
+      "name": "Build Aggregate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, -320]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "crs-forecast-meta",
+        "value": "={{ $('Build Aggregate').first().json.metaStr }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "id": "set-meta",
+      "name": "Redis SET meta",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [540, -320],
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "crs-forecast-keyagg",
+        "value": "={{ $('Build Aggregate').first().json.keyAggStr }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "id": "set-keyagg-start",
+      "name": "Redis SET keyagg (start)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [740, -320],
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": { "operation": "delete", "key": "crs-forecast-response" },
+      "id": "del-response-start",
+      "name": "Redis DEL response",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [940, -320],
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'start', totalRows: $('Build Aggregate').first().json.totalRows, rowChunkSize: $('Build Aggregate').first().json.rowChunkSize } }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond-start",
+      "name": "Respond Start",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [1140, -320]
+    },
+    {
+      "parameters": { "operation": "get", "propertyName": "meta", "key": "crs-forecast-meta", "options": {} },
+      "id": "get-meta-chunk",
+      "name": "Redis GET meta",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [-560, 0],
+      "alwaysOutputData": true,
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== CHUNK (no-op): a agregação já é feita inteira na fase 'start'. =====\n// Mantido apenas para preservar o contrato start -> chunk -> finalize do front.\nlet total = 0;\ntry {\n  const m = $('Redis GET meta').first().json.meta;\n  const meta = (typeof m === 'string') ? JSON.parse(m) : m;\n  total = (meta && meta.total_rows) || 0;\n} catch (e) {}\nreturn [{ json: { ok: true, processedRows: 0, nextOffset: total, hasMore: false, totalRows: total } }];"
+      },
+      "id": "process-chunk",
+      "name": "Process Chunk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'chunk', processedRows: $('Process Chunk').first().json.processedRows, nextOffset: $('Process Chunk').first().json.nextOffset, hasMore: $('Process Chunk').first().json.hasMore, totalRows: $('Process Chunk').first().json.totalRows } }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond-chunk",
+      "name": "Respond Chunk",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [-160, 0]
+    },
+    {
+      "parameters": { "operation": "get", "propertyName": "keyagg", "key": "crs-forecast-keyagg", "options": {} },
+      "id": "get-keyagg-final",
+      "name": "Redis GET keyagg (finalize)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [-760, 320],
+      "alwaysOutputData": true,
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": { "operation": "get", "propertyName": "meta", "key": "crs-forecast-meta", "options": {} },
+      "id": "get-meta-final",
+      "name": "Redis GET meta (finalize)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [-560, 320],
+      "alwaysOutputData": true,
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== FINALIZE: aplica sazonalidade + orçamento por chave e monta o envelope =====\nfunction readNode(node, prop) {\n  try { const it = $(node).all(); return (it && it.length) ? it[0].json[prop] : null; } catch (e) { return null; }\n}\nconst kaRaw = readNode('Redis GET keyagg (finalize)', 'keyagg');\nconst metaRaw = readNode('Redis GET meta (finalize)', 'meta');\nlet keyAgg; try { keyAgg = (typeof kaRaw === 'string') ? JSON.parse(kaRaw || '{}') : kaRaw; } catch (e) { keyAgg = null; }\nlet meta; try { meta = (typeof metaRaw === 'string') ? JSON.parse(metaRaw) : metaRaw; } catch (e) { meta = null; }\nif (!keyAgg || typeof keyAgg !== 'object') {\n  return [{ json: { success: false, error: 'Agregado vazio. Execute start + chunks antes de finalize.' } }];\n}\nmeta = meta || { cenario: {}, source: {}, budget: {}, total_rows: 0 };\nconst budget = meta.budget || {};\n\nconst round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;\nconst mensal = Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, previsto: 0, anterior: 0 }));\nconst regAgg = {}; const skuAgg = {};\nlet totalPrev = 0, totalAnt = 0, absErr = 0, mapeSum = 0, mapeCount = 0;\n\nconst keys = new Set(Object.keys(keyAgg));\nfor (const k of Object.keys(budget)) keys.add(k);\n\nfor (const k of keys) {\n  const e = keyAgg[k] || {};\n  const b = budget[k];\n  const parts = k.split('||');\n  const item = e.item || (b && b.item) || parts[0];\n  const regional = e.regional || (b && b.regional) || parts[1];\n  const descricao = e.descricao || (b && b.descricao) || '';\n  const nome_regional = e.nome_regional || (b && b.nome_regional) || '';\n  const meses = e.meses || [0,0,0,0,0,0,0,0,0,0,0,0,0];\n  const total = e.total || 0;\n  const bud = b ? b.annual : undefined;\n  for (let m = 1; m <= 12; m++) {\n    const anterior = meses[m] || 0;\n    const season = total > 0 ? meses[m] / total : 1 / 12;\n    const prevista = (bud !== undefined) ? bud * season : anterior;\n    const dif = prevista - anterior;\n    mensal[m - 1].previsto += prevista;\n    mensal[m - 1].anterior += anterior;\n    totalPrev += prevista; totalAnt += anterior; absErr += Math.abs(dif);\n    if (anterior > 0) { mapeSum += Math.abs(dif) / anterior; mapeCount++; }\n    if (!regAgg[regional]) regAgg[regional] = { regional, nome_regional, previsto: 0, anterior: 0, itens: {} };\n    regAgg[regional].previsto += prevista;\n    regAgg[regional].anterior += anterior;\n    regAgg[regional].itens[item] = 1;\n    if (!skuAgg[item]) skuAgg[item] = { item, descricao, total_previsto: 0, total_anterior: 0 };\n    skuAgg[item].total_previsto += prevista;\n    skuAgg[item].total_anterior += anterior;\n  }\n}\n\nconst wape = totalAnt > 0 ? absErr / totalAnt : null;\nconst mape = mapeCount > 0 ? mapeSum / mapeCount : null;\nconst accuracy = wape !== null ? Math.max(0, Math.min(1, 1 - wape)) : null;\n\nconst por_regional = Object.values(regAgg).map(r => ({\n  regional: r.regional, nome_regional: r.nome_regional,\n  previsto: round2(r.previsto), anterior: round2(r.anterior),\n  diferenca: round2(r.previsto - r.anterior), itens: Object.keys(r.itens || {}).length\n})).sort((a, b) => b.previsto - a.previsto);\n\nconst top_skus = Object.values(skuAgg).map(s => ({\n  item: s.item, descricao: s.descricao,\n  total_previsto: round2(s.total_previsto), total_anterior: round2(s.total_anterior),\n  crescimento_percentual: s.total_anterior > 0 ? round2((s.total_previsto - s.total_anterior) / s.total_anterior * 100) : 0\n})).sort((a, b) => b.total_previsto - a.total_previsto);\n\nconst mensalOut = mensal.map(x => ({ mes: x.mes, previsto: round2(x.previsto), anterior: round2(x.anterior) }));\n\nconst envelope = {\n  success: true,\n  createdAt: new Date().toISOString(),\n  source: meta.source || {},\n  cenario: meta.cenario || {},\n  kpis: {\n    total_previsto: round2(totalPrev),\n    total_anterior: round2(totalAnt),\n    mape: mape,\n    wape: wape,\n    forecast_accuracy: accuracy\n  },\n  mensal: mensalOut,\n  por_regional: por_regional,\n  top_skus: top_skus.slice(0, 50),\n  registros_base: meta.total_rows || 0\n};\nreturn [{ json: { envelopeStr: JSON.stringify(envelope), count: por_regional.length } }];"
+      },
+      "id": "build-envelope",
+      "name": "Build Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, 320]
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "crs-forecast-response",
+        "messageData": "={{ $json.envelopeStr }}"
+      },
+      "id": "push-response",
+      "name": "Redis PUSH response",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [-160, 320],
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": { "operation": "delete", "key": "crs-forecast-keyagg" },
+      "id": "del-keyagg-final",
+      "name": "Redis DEL keyagg (final)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [40, 320],
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": { "operation": "delete", "key": "crs-forecast-meta" },
+      "id": "del-meta-final",
+      "name": "Redis DEL meta (final)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [240, 320],
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'finalize', count: $('Build Envelope').first().json.count } }}",
+        "options": { "responseCode": 201 }
+      },
+      "id": "respond-final",
+      "name": "Respond Finalize",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [440, 320]
+    },
+    {
+      "parameters": { "operation": "get", "propertyName": "response", "key": "crs-forecast-response", "options": {} },
+      "id": "get-response",
+      "name": "Redis GET response",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [-760, 640],
+      "alwaysOutputData": true,
+      "credentials": { "redis": { "id": "vZedWfLxZFTVri9g", "name": "redis_cloudfy" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $('Redis GET response').first().json.response;\nif (!resp || (Array.isArray(resp) && resp.length === 0)) {\n  return [{ json: { success: false, error: 'Nenhuma previsão em cache. Recalcule.' } }];\n}\nconst raw = Array.isArray(resp) ? resp[resp.length - 1] : resp;\nlet env;\ntry { env = (typeof raw === 'string') ? JSON.parse(raw) : raw; } catch (e) { return [{ json: { success: false, error: 'Cache inválido.' } }]; }\nreturn [{ json: env }];"
+      },
+      "id": "parse-response",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, 640]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-get",
+      "name": "Respond Get",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [-360, 640]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Phase Switch", "type": "main", "index": 0 }]] },
+    "Phase Switch": {
+      "main": [
+        [{ "node": "Validate Input", "type": "main", "index": 0 }],
+        [{ "node": "Redis GET meta", "type": "main", "index": 0 }],
+        [{ "node": "Redis GET keyagg (finalize)", "type": "main", "index": 0 }],
+        [{ "node": "Redis GET response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Input": { "main": [[{ "node": "List Drive Folder", "type": "main", "index": 0 }]] },
+    "List Drive Folder": { "main": [[{ "node": "Pick Latest XLSX", "type": "main", "index": 0 }]] },
+    "Pick Latest XLSX": { "main": [[{ "node": "Download File", "type": "main", "index": 0 }]] },
+    "Download File": {
+      "main": [[
+        { "node": "Extract Base", "type": "main", "index": 0 },
+        { "node": "Extract Orcamento", "type": "main", "index": 0 }
+      ]]
+    },
+    "Extract Base": { "main": [[{ "node": "Build Aggregate", "type": "main", "index": 0 }]] },
+    "Extract Orcamento": { "main": [[{ "node": "Build Aggregate", "type": "main", "index": 0 }]] },
+    "Build Aggregate": { "main": [[{ "node": "Redis SET meta", "type": "main", "index": 0 }]] },
+    "Redis SET meta": { "main": [[{ "node": "Redis SET keyagg (start)", "type": "main", "index": 0 }]] },
+    "Redis SET keyagg (start)": { "main": [[{ "node": "Redis DEL response", "type": "main", "index": 0 }]] },
+    "Redis DEL response": { "main": [[{ "node": "Respond Start", "type": "main", "index": 0 }]] },
+    "Redis GET meta": { "main": [[{ "node": "Process Chunk", "type": "main", "index": 0 }]] },
+    "Process Chunk": { "main": [[{ "node": "Respond Chunk", "type": "main", "index": 0 }]] },
+    "Redis GET keyagg (finalize)": { "main": [[{ "node": "Redis GET meta (finalize)", "type": "main", "index": 0 }]] },
+    "Redis GET meta (finalize)": { "main": [[{ "node": "Build Envelope", "type": "main", "index": 0 }]] },
+    "Build Envelope": { "main": [[{ "node": "Redis PUSH response", "type": "main", "index": 0 }]] },
+    "Redis PUSH response": { "main": [[{ "node": "Redis DEL keyagg (final)", "type": "main", "index": 0 }]] },
+    "Redis DEL keyagg (final)": { "main": [[{ "node": "Redis DEL meta (final)", "type": "main", "index": 0 }]] },
+    "Redis DEL meta (final)": { "main": [[{ "node": "Respond Finalize", "type": "main", "index": 0 }]] },
+    "Redis GET response": { "main": [[{ "node": "Parse Response", "type": "main", "index": 0 }]] },
+    "Parse Response": { "main": [[{ "node": "Respond Get", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

@@ -1,0 +1,503 @@
+{
+  "name": "CRS-Forecast-Snapshot-Base (xlsx -> Supabase)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "SETUP Supabase (n8n)\n\n1. Crie uma credencial \"Header Auth\" chamada \"Supabase Service Role\":\n   Name: Authorization\n   Value: Bearer <SERVICE_ROLE_KEY do Supabase>\n   (o service_role ignora RLS; mantenha-o apenas na credencial, nunca no JSON)\n\n2. Vincule essa credencial a TODOS os nós HTTP Request deste fluxo.\n\n3. O header \"apikey\" usa a chave anon (publica) apenas para o Kong.\n\nRode antes as migrations 007, 008 e 009.",
+        "height": 320,
+        "width": 460
+      },
+      "id": "Setup",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1240,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crs-forecast/snapshot-base",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first() ? $input.first().json : {};\nconst body = (input && input.body) || input || {};\nif (!body.user_id) throw new Error('user_id obrigatorio');\nif (!body.company_name) throw new Error('company_name obrigatorio');\nreturn [{ json: {\n  user_id: String(body.user_id),\n  company_name: String(body.company_name),\n  ano_base: parseInt(body.ano_base, 10) || null,\n  ano_previsao: parseInt(body.ano_previsao, 10) || (new Date().getFullYear() + 1)\n} }];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "limit": 50,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1JjqIUh4zT7U5IhK5CQ8wdOHcPy95JEer",
+            "mode": "id"
+          }
+        },
+        "options": {
+          "fields": [
+            "*"
+          ]
+        }
+      },
+      "id": "drive-list",
+      "name": "List Drive Folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -800,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst xlsx = items.filter(f => {\n  const name = (f.name || '').toLowerCase();\n  const mime = (f.mimeType || '').toLowerCase();\n  return name.endsWith('.xlsx') || mime.includes('spreadsheetml') || mime.includes('vnd.google-apps.spreadsheet');\n});\nif (xlsx.length === 0) throw new Error('Nenhuma planilha encontrada na pasta do Google Drive.');\nxlsx.sort((a, b) => new Date(b.modifiedTime || b.createdTime || 0) - new Date(a.modifiedTime || a.createdTime || 0));\nconst latest = xlsx[0];\nreturn [{ json: { file_id: latest.id, file_name: latest.name, modified_time: latest.modifiedTime || null } }];"
+      },
+      "id": "pick-latest",
+      "name": "Pick Latest XLSX",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.file_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-file",
+      "name": "Download File",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -400,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data",
+        "options": {
+          "sheetName": "Base_Histórica_de_Vendas"
+        }
+      },
+      "id": "extract-base",
+      "name": "Extract Base",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -180,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data",
+        "options": {
+          "sheetName": "={{ 'Orçamento_' + ($('Validate Input').first().json.ano_previsao || 2026) }}"
+        }
+      },
+      "id": "extract-orcamento",
+      "name": "Extract Orcamento",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -180,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== BUILD ROWS: transforma o xlsx em linhas para o Supabase =====\nconst params = $('Validate Input').first().json;\nconst userId = params.user_id;\nconst company = params.company_name;\nconst anoPrev = Number(params.ano_previsao) || (new Date().getFullYear() + 1);\nconst picked = $('Pick Latest XLSX').first().json;\n\nfunction rowsOf(node){ try { return $(node).all().map(i => i.json).filter(Boolean); } catch (e) { return []; } }\nconst baseRows = rowsOf('Extract Base');\nconst orcRows = rowsOf('Extract Orcamento');\n\nconst norm = (s) => (s === undefined || s === null) ? '' : String(s).trim();\nconst num = (v) => {\n  if (typeof v === 'number') return isNaN(v) ? 0 : v;\n  if (v === undefined || v === null || v === '') return 0;\n  const s = String(v).trim().split(' ').join('').split(String.fromCharCode(160)).join('').replace(',', '.');\n  const n = parseFloat(s); return isNaN(n) ? 0 : n;\n};\nconst flat = (s) => String(s).toLowerCase().split(' ').join('').split(String.fromCharCode(160)).join('');\nfunction keyFor(obj, names){\n  const keys = Object.keys(obj || {});\n  for (const n of names){ const k = keys.find(h => flat(h) === flat(n)); if (k) return k; }\n  for (const n of names){ const k = keys.find(h => String(h).toLowerCase().includes(n.toLowerCase())); if (k) return k; }\n  return null;\n}\nfunction uuidv4(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){ const r = Math.random()*16|0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); }\n\nconst batchId = uuidv4();\n\n// ---- historico_vendas (todas as linhas validas, qualquer ano) ----\nconst historico = [];\nif (baseRows.length){\n  const s = baseRows[0];\n  const bk = {\n    item: keyFor(s, ['Item','SKU']), regional: keyFor(s, ['Regional']),\n    mes: keyFor(s, ['Mes','Mês']), ano: keyFor(s, ['Ano']),\n    qtd: keyFor(s, ['Quantidade','Qtd','Qtde']), valor: keyFor(s, ['Valor','Faturamento']),\n    descricao: keyFor(s, ['Descricao','Descrição']), nomeReg: keyFor(s, ['Nome Regional','Nome_Regional']),\n    tipo: keyFor(s, ['Tipo Mercado','Tipo_Mercado','Mercado'])\n  };\n  for (const row of baseRows){\n    const item = norm(bk.item ? row[bk.item] : '');\n    const regional = norm(bk.regional ? row[bk.regional] : '');\n    if (!item || !regional) continue;\n    const mes = parseInt(bk.mes ? row[bk.mes] : '', 10);\n    const ano = parseInt(bk.ano ? row[bk.ano] : '', 10);\n    if (!(mes >= 1 && mes <= 12)) continue;\n    if (!(ano >= 2020 && ano <= 2030)) continue;\n    historico.push({\n      user_id: userId, company_name: company, ano, mes, item,\n      descricao: bk.descricao ? norm(row[bk.descricao]) : '', regional,\n      nome_regional: bk.nomeReg ? norm(row[bk.nomeReg]) : '',\n      tipo_mercado: bk.tipo ? norm(row[bk.tipo]) : '',\n      quantidade: num(bk.qtd ? row[bk.qtd] : 0),\n      valor: bk.valor ? num(row[bk.valor]) : null,\n      upload_batch_id: batchId\n    });\n  }\n}\n\n// ---- orcamento (deduplicado por item||regional) ----\nconst orcamento = [];\nif (orcRows.length){\n  const s = orcRows[0];\n  const ok = {\n    item: keyFor(s, ['Item','SKU']), regional: keyFor(s, ['Regional']),\n    descricao: keyFor(s, ['Descricao','Descrição']), nomeReg: keyFor(s, ['Nome Regional','Nome_Regional']),\n    orc: keyFor(s, ['Orcamento Total','Orçamento Total','Orcamento','Orçamento','Total','Budget'])\n  };\n  const seen = new Set();\n  for (const row of orcRows){\n    const item = norm(ok.item ? row[ok.item] : '');\n    const regional = norm(ok.regional ? row[ok.regional] : '');\n    if (!item || !regional) continue;\n    const key = item + '||' + regional; if (seen.has(key)) continue; seen.add(key);\n    orcamento.push({\n      user_id: userId, company_name: company, ano: anoPrev, item, regional,\n      descricao: ok.descricao ? norm(row[ok.descricao]) : '',\n      nome_regional: ok.nomeReg ? norm(row[ok.nomeReg]) : '',\n      orcamento_total: num(ok.orc ? row[ok.orc] : 0), upload_batch_id: batchId\n    });\n  }\n}\n\nif (historico.length === 0) {\n  throw new Error('Nenhuma linha valida encontrada na Base_Historica_de_Vendas.');\n}\n\nconst anos = [...new Set(historico.map(h => h.ano))].sort();\nconst snapshot = {\n  user_id: userId, company_name: company, batch_id: batchId,\n  file_name: picked.file_name || null, file_id: picked.file_id || null,\n  modified_time: picked.modified_time || null,\n  ano_base: anos.length ? anos[anos.length - 1] : null,\n  total_rows: historico.length, total_orcamento: orcamento.length,\n  status: 'processando', is_atual: false\n};\nreturn [{ json: { batch_id: batchId, company_name: company, snapshot, historico, orcamento, anos } }];"
+      },
+      "id": "build-rows",
+      "name": "Build Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/crs_brands_historico_snapshots",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Rows').first().json.snapshot) }}",
+        "options": {}
+      },
+      "id": "insert-snapshot",
+      "name": "Insert Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_HEADER_CRED",
+          "name": "Supabase Service Role (Authorization Bearer)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/crs_brands_historico_vendas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Rows').first().json.historico) }}",
+        "options": {}
+      },
+      "id": "insert-historico",
+      "name": "Insert Historico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_HEADER_CRED",
+          "name": "Supabase Service Role (Authorization Bearer)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/crs_brands_orcamento?on_conflict=company_name,ano,item,regional",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Rows').first().json.orcamento) }}",
+        "options": {}
+      },
+      "id": "upsert-orcamento",
+      "name": "Upsert Orcamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_HEADER_CRED",
+          "name": "Supabase Service Role (Authorization Bearer)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/rpc/crs_forecast_activate_snapshot",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_batch_id: $('Build Rows').first().json.batch_id, p_company_name: $('Build Rows').first().json.company_name }) }}",
+        "options": {}
+      },
+      "id": "activate-snapshot",
+      "name": "Activate Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_HEADER_CRED",
+          "name": "Supabase Service Role (Authorization Bearer)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, batch_id: $('Build Rows').first().json.batch_id, total_rows: $('Build Rows').first().json.historico.length, total_orcamento: $('Build Rows').first().json.orcamento.length, anos: $('Build Rows').first().json.anos } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-ok",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1180,
+        -120
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "List Drive Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Drive Folder": {
+      "main": [
+        [
+          {
+            "node": "Pick Latest XLSX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Latest XLSX": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Extract Base",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Orcamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Base": {
+      "main": [
+        [
+          {
+            "node": "Build Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Orcamento": {
+      "main": [
+        [
+          {
+            "node": "Build Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rows": {
+      "main": [
+        [
+          {
+            "node": "Insert Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Insert Historico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Historico": {
+      "main": [
+        [
+          {
+            "node": "Upsert Orcamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Orcamento": {
+      "main": [
+        [
+          {
+            "node": "Activate Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Activate Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

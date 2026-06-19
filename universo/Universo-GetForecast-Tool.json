@@ -1,0 +1,102 @@
+{
+  "name": "Universo-GetForecast-Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -40,
+        0
+      ],
+      "id": "tool-trigger",
+      "name": "Start"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "response",
+        "key": "predict-response",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        200,
+        0
+      ],
+      "id": "tool-redis-get",
+      "name": "Redis GET predict-response",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lê a previsão em cache (Redis LIST predict-response) e devolve um recorte\n// COMPACTO para a IA. Dois modos:\n//   - sku informado  -> detalhe daquele(s) SKU(s), com o 'damping' decodificado.\n//   - sem sku        -> resumo agregado (contagem de decisões, regime shifts, etc.).\nconst trig = $('Start').first().json || {};\nconst sku = (trig.sku || '').toString().trim();\nconst mes = (trig.mes || '').toString().trim();\n\nconst raw = $json.response;\nlet env = null;\ntry {\n  if (Array.isArray(raw)) env = JSON.parse(raw[0]);\n  else if (typeof raw === 'string') env = JSON.parse(raw);\n} catch (e) { env = null; }\n\nif (!env || !Array.isArray(env.data) || !env.data.length) {\n  return [{ json: { erro: 'Sem previsão em cache. Rode a previsão (Predict) antes de perguntar.' } }];\n}\n\nconst data = env.data;\nconst targets = env.forecastTargets || [];\n\nfunction compactSku(row) {\n  const meses = {};\n  for (const k of Object.keys(row.detalhes || {})) {\n    if (mes && k !== mes) continue;\n    const d = row.detalhes[k] || {};\n    const ic = d.intervaloConfianca || {};\n    const dmp = d.damping || {};\n    meses[k] = {\n      faixaMin: ic.lower != null ? Math.round(ic.lower) : null,\n      faixaMax: ic.upper != null ? Math.round(ic.upper) : null,\n      previsao: d.previsao != null ? Math.round(d.previsao) : null,\n      tolerancePct: d.tolerancePct,\n      confianca: d.confianca,\n      tipo: d.tipo,\n      motivo: d.motivo || null,\n      decisao: dmp.selector || null,\n      regime: dmp.regimeShift ? {\n        direcao: dmp.regimeShift.direction,\n        pull: dmp.regimeShift.pullWeight,\n        razaoAtual: dmp.regimeShift.currentRatio,\n        limite: dmp.regimeShift.fenceRatio,\n        fonte: dmp.regimeShift.source\n      } : null,\n      teto: dmp.fenceApplied && dmp.fenceInfo ? {\n        direcao: dmp.fenceInfo.direction,\n        limite: dmp.fenceInfo.fence,\n        nivelRecente: dmp.fenceInfo.recentLevel\n      } : null,\n      softCap: !!dmp.capApplied,\n      biasFactor: dmp.biasFactor,\n      wRecent: dmp.wRecent,\n      nivelRecente: dmp.recentLevel,\n      ultimoReal: dmp.lastReal,\n      overshootHist: dmp.overshootRate,\n      looErrV1: dmp.looErrV1,\n      looErrV2: dmp.looErrV2,\n      anosCalibrados: dmp.wRecentSamples\n    };\n  }\n  return {\n    SKU: row.SKU,\n    descricao: row['Descrição'],\n    formato: row.Formato,\n    semHistorico: !!row.insufficientHistory,\n    meses\n  };\n}\n\nif (sku) {\n  const needle = sku.toLowerCase();\n  const matches = data.filter((r) =>\n    String(r.SKU).toLowerCase() === needle ||\n    String(r['Descrição'] || '').toLowerCase().includes(needle)\n  );\n  if (!matches.length) {\n    return [{ json: { erro: 'SKU/descrição não encontrado: ' + sku } }];\n  }\n  return [{ json: {\n    createdAt: env.createdAt,\n    forecastTargets: targets,\n    encontrados: matches.length,\n    skus: matches.slice(0, 8).map(compactSku)\n  } }];\n}\n\n// ---- Resumo agregado (sem sku) ----\nconst sel = {}, tip = {};\nlet regimeCollapse = 0, regimeBoom = 0, fence = 0, cap = 0, insuf = 0;\nconst exemplosRegime = [];\nfor (const r of data) {\n  if (r.insufficientHistory) { insuf++; continue; }\n  for (const k of Object.keys(r.detalhes || {})) {\n    const d = r.detalhes[k] || {};\n    const dmp = d.damping || {};\n    const s = dmp.selector || '—';\n    sel[s] = (sel[s] || 0) + 1;\n    const t = d.tipo || '—';\n    tip[t] = (tip[t] || 0) + 1;\n    if (dmp.regimeShift) {\n      if (dmp.regimeShift.direction === 'collapse') regimeCollapse++; else regimeBoom++;\n      if (exemplosRegime.length < 12) exemplosRegime.push({ SKU: r.SKU, mes: k, direcao: dmp.regimeShift.direction });\n    }\n    if (dmp.fenceApplied) fence++;\n    if (dmp.capApplied) cap++;\n  }\n}\nreturn [{ json: {\n  createdAt: env.createdAt,\n  forecastTargets: targets,\n  totalSkus: data.length,\n  semHistorico: insuf,\n  decisoes: sel,\n  tipos: tip,\n  regimeCollapse,\n  regimeBoom,\n  tetoAplicado: fence,\n  softCapAplicado: cap,\n  exemplosRegime\n} }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "tool-format",
+      "name": "Format Forecast"
+    },
+    {
+      "parameters": {
+        "content": "## Tool: leitura da previsão (Redis)\n\nSub-workflow chamado pela tool `consultar_previsao` do agente.\n\n**Entrada** (via Execute Workflow):\n- `sku` (opcional): código exato OU trecho da descrição. Se vazio, devolve resumo agregado.\n- `mes` (opcional): filtra um mês específico (ex.: `2026-07`).\n\n**Saída:** JSON compacto com faixaMin/faixaMax + `damping` decodificado (decisão, regime, teto, bias...).\n\nLê a LIST `predict-response` (mesmo cache do GetCached).",
+        "height": 240,
+        "width": 460,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -40,
+        -300
+      ],
+      "typeVersion": 1,
+      "id": "tool-note"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Redis GET predict-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET predict-response": {
+      "main": [
+        [
+          {
+            "node": "Format Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "tags": []
+}

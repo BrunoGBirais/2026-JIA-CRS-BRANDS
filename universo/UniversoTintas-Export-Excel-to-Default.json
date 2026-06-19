@@ -1,0 +1,105 @@
+{
+  "name": "UniversoTintas-Export-Excel-to-Default",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "universo-replace-dados-cadastrais",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "74dcd485-b0a6-4d47-9a1c-531760017d4f",
+      "name": "Webhook",
+      "webhookId": "00320605-722c-48a4-b899-0cb2e8a40655"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Leads atualizados com sucesso",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        496,
+        0
+      ],
+      "id": "5c192e9b-6691-46e0-b151-25011239bf09",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "fileId": {
+          "__rl": true,
+          "value": "1MDh0fkb4-7gGha68UULDCudJ9VT0rTwSs_vIM-GxTHg",
+          "mode": "id"
+        },
+        "changeFileContent": true,
+        "inputDataFieldName": "data0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        256,
+        0
+      ],
+      "id": "f84e6ebe-9e13-4a6c-b334-d0494065d049",
+      "name": "Update file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "1yxLK6IGIPQiU21B",
+          "name": "Google Drive account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update file": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "a14fca42-e7d5-4ba5-91e1-47931ef55893",
+  "meta": {
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "id": "JeEfC9SXRJQ9VZR2",
+  "tags": []
+}

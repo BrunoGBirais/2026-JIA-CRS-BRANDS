@@ -1,0 +1,165 @@
+{
+  "name": "Universo-GetCached",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -32,
+        16
+      ],
+      "id": "37ba18a9-3a4b-40ba-8fa2-82d229a040ab",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "response",
+        "key": "predict-response",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        176,
+        16
+      ],
+      "id": "7e0f97dc-7fd6-47cb-ac4d-34f393e2038c",
+      "name": "Get Cached Response",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const json = $input.all().map(d => d.json)\n\nif (!json[0].response) return null;\n\nreturn JSON.parse(json[0].response[0])"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        16
+      ],
+      "id": "102ad2f6-2985-45df-8540-3339d6e917da",
+      "name": "Parse Cache"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        48,
+        352
+      ],
+      "id": "bd76fc2a-dc9b-4e5a-babd-16a537b20662",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-response"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        288,
+        352
+      ],
+      "id": "d5067bf4-fbc9-440d-8bf7-d464ecdc7f7d",
+      "name": "Purge",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Purge Cache",
+        "height": 256,
+        "width": 528,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        272
+      ],
+      "typeVersion": 1,
+      "id": "d387bb87-ec40-46ed-b407-21136950d838",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Get cached data from Redis\n\nData pushed to cache in \"Predict\" workflow.\n",
+        "height": 320,
+        "width": 704,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -112,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "85f51d1d-eef7-471f-822b-76b946a8ef8c",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Get Cached Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Cached Response": {
+      "main": [
+        [
+          {
+            "node": "Parse Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Purge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "10707612-ceaa-4509-a12b-c9de68a039e5",
+  "meta": {
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "id": "iNUOvaoT6pai9vFx",
+  "tags": []
+}

@@ -1,0 +1,4946 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Previsão de Vendas - Universo Tintas</title>
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="https://www.universotintas.com.br/wp-content/uploads/2025/04/cropped-apple-touch-icon-32x32.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="https://www.universotintas.com.br/wp-content/uploads/2025/04/cropped-apple-touch-icon-180x180.png"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+      // Polyfill storage for sandboxed iframes (n8n webhook HTML)
+      (function () {
+        function createMemoryStorage() {
+          var store = {};
+          return {
+            getItem: function (k) {
+              return store.hasOwnProperty(k) ? store[k] : null;
+            },
+            setItem: function (k, v) {
+              store[k] = String(v);
+            },
+            removeItem: function (k) {
+              delete store[k];
+            },
+            clear: function () {
+              for (var p in store) delete store[p];
+            },
+            get length() {
+              return Object.keys(store).length;
+            },
+            key: function (i) {
+              return Object.keys(store)[i] || null;
+            },
+          };
+        }
+        try {
+          window.sessionStorage;
+        } catch (e) {
+          Object.defineProperty(window, "sessionStorage", {
+            value: createMemoryStorage(),
+            writable: false,
+          });
+        }
+        try {
+          window.localStorage;
+        } catch (e) {
+          Object.defineProperty(window, "localStorage", {
+            value: createMemoryStorage(),
+            writable: false,
+          });
+        }
+        // Polyfill navigator.locks — always override to avoid SecurityError
+        // in sandboxed iframe contexts where the API exists but is blocked
+        var noopRequest = function (_name, _opts, cb) {
+          if (typeof _opts === "function") {
+            cb = _opts;
+          }
+          return Promise.resolve(cb({ name: _name, mode: "exclusive" }));
+        };
+        try {
+          Object.defineProperty(navigator, "locks", {
+            value: {
+              request: noopRequest,
+              query: function () {
+                return Promise.resolve({ held: [], pending: [] });
+              },
+            },
+            writable: true,
+            configurable: true,
+          });
+        } catch (e) {
+          // If defineProperty fails, try direct assignment
+          try {
+            navigator.locks = {
+              request: noopRequest,
+              query: function () {
+                return Promise.resolve({ held: [], pending: [] });
+              },
+            };
+          } catch (e2) {}
+        }
+      })();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+      :root {
+        --color-primary: #f78005;
+        --color-primary-hover: #944a00;
+        --color-wine: #a63934;
+        --color-dark-gray: #011a3b;
+        --color-medium-gray: #58595b;
+        --color-white: #ffffff;
+        --color-black: #1a1a1a;
+        --color-success: #4caf50;
+
+        --bg-body: #f9f9ff;
+        --bg-sidebar: var(--color-dark-gray);
+        --bg-main: #f0f3ff;
+        --bg-card: var(--color-white);
+        --bg-header: var(--color-dark-gray);
+
+        --text-primary: #021b3c;
+        --text-secondary: #574335;
+        --text-inverse: var(--color-white);
+
+        --border-color: rgba(138, 114, 99, 0.15);
+        --sidebar-width: 260px;
+        --shadow-ambient: 0px 12px 32px rgba(2, 27, 60, 0.08);
+
+        --surface-container-low: #f0f3ff;
+        --surface-container-high: #dfe8ff;
+
+        --on-error-container: #93000a;
+      }
+
+      [data-theme="dark"] {
+        --bg-body: #0a0f1a;
+        --bg-sidebar: #050a14;
+        --bg-main: #0f1520;
+        --bg-card: #1b2235;
+        --bg-header: #070c18;
+
+        --text-primary: #e0e5f0;
+        --text-secondary: #a0a8c0;
+        --text-inverse: #e0e0e0;
+
+        --border-color: rgba(255, 255, 255, 0.08);
+        --surface-container-low: #0f1520;
+        --surface-container-high: #1b2235;
+        --shadow-ambient: 0px 12px 32px rgba(0, 0, 0, 0.3);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Inter", "Segoe UI", sans-serif;
+        height: 100vh;
+        overflow: hidden;
+        background: var(--bg-body);
+        color: var(--text-primary);
+        transition:
+          background-color 0.3s ease,
+          color 0.3s ease;
+      }
+
+      .app-container {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      /* HEADER */
+      .app-header {
+        background: var(--bg-header);
+        color: var(--text-inverse);
+        padding: 16px 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 100;
+        position: relative;
+      }
+      /* Brand accent — sutil faixa com a paleta do anel Universo Tintas */
+      .app-header::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          #00a3e0 0%,
+          #6cbf3f 20%,
+          #ffd400 40%,
+          #f78005 60%,
+          #e6007e 80%,
+          #6f3fa0 100%
+        );
+        opacity: 0.85;
+      }
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .toggle-sidebar-btn {
+        background: transparent;
+        border: 2px solid var(--color-primary);
+        color: var(--color-primary);
+        width: 38px;
+        height: 38px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+      .toggle-sidebar-btn:hover {
+        background: var(--color-primary);
+        color: white;
+      }
+
+      .logo-area {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .app-logo {
+        display: inline-flex;
+        align-items: center;
+        height: 36px;
+      }
+      .app-logo img {
+        height: 100%;
+        width: auto;
+        display: block;
+      }
+      .header-divider {
+        width: 1px;
+        height: 26px;
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .header-subtitle {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.65);
+      }
+
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .header-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        border: 1px solid rgba(76, 175, 80, 0.3);
+        color: #4caf50;
+        background: rgba(76, 175, 80, 0.1);
+      }
+      .header-badge .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #4caf50;
+        box-shadow: 0 0 5px #4caf50;
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      /* MAIN GRID */
+      .main-grid {
+        display: grid;
+        flex: 1;
+        overflow: hidden;
+        transition: grid-template-columns 0.3s ease;
+      }
+      @media (min-width: 769px) {
+        .main-grid {
+          grid-template-columns: var(--sidebar-width) 1fr;
+        }
+        .main-grid.sidebar-closed {
+          grid-template-columns: 0 1fr;
+        }
+      }
+
+      .sidebar-backdrop {
+        display: none;
+      }
+
+      /* SIDEBAR */
+      #sidebar {
+        background: var(--bg-sidebar);
+        border-right: 2px solid var(--color-primary);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: background-color 0.3s ease;
+      }
+
+      .sidebar-nav {
+        flex: 1;
+        padding: 20px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .nav-section-title {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: rgba(255, 255, 255, 0.35);
+        padding: 16px 12px 8px;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+        background: transparent;
+        width: 100%;
+        text-align: left;
+        position: relative;
+      }
+      .nav-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+        color: white;
+      }
+      .nav-item.active {
+        background: rgba(255, 255, 255, 0.05);
+        color: white;
+      }
+      .nav-item.active::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 4px;
+        height: 60%;
+        background: var(--color-primary);
+        border-radius: 0 4px 4px 0;
+      }
+      .nav-item i {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+      }
+      .nav-item.predict {
+        border: 1px solid var(--color-primary);
+        background: linear-gradient(135deg, #944a00, #f78005);
+        color: white;
+        transition: all 0.5s ease;
+      }
+      .nav-item.predict:hover {
+        opacity: 0.9;
+      }
+
+      /* SIDEBAR FOOTER */
+      .sidebar-footer {
+        padding: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(0, 0, 0, 0.15);
+        margin-top: auto;
+      }
+      .user-profile {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+      }
+      .user-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: var(--color-primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .user-info {
+        flex: 1;
+        overflow: hidden;
+      }
+      .user-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-inverse);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .user-role {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .footer-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .footer-btn {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: transparent;
+        color: rgba(255, 255, 255, 0.7);
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 12px;
+        transition: all 0.2s;
+      }
+      .footer-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+      }
+
+      /* MAIN CONTENT */
+      .main-content {
+        overflow-y: auto;
+        padding: 32px;
+        background: var(--bg-main);
+        transition: background-color 0.3s ease;
+      }
+      .page-header {
+        margin-bottom: 32px;
+      }
+      .page-header h1 {
+        font-family: "Manrope", sans-serif;
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin-bottom: 6px;
+      }
+      .page-header p {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+      }
+
+      .info-bar {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+      }
+      .info-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        background: var(--bg-card);
+        padding: 8px 14px;
+        border-radius: 20px;
+        box-shadow: var(--shadow-ambient);
+      }
+      .info-chip .info-link {
+        color: var(--color-primary);
+        text-decoration: none;
+        font-weight: 500;
+        background: none;
+        border: 0;
+        padding: 0;
+        font: inherit;
+        cursor: pointer;
+      }
+      .info-chip .info-link:hover:not(:disabled) {
+        text-decoration: underline;
+      }
+      .info-chip .info-link:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .info-chip .material-icons {
+        font-size: 18px;
+        color: var(--color-primary);
+      }
+
+      /* TABLE CARD */
+      .table-card {
+        background: var(--bg-card);
+        border-radius: 12px;
+        box-shadow: var(--shadow-ambient);
+        overflow: hidden;
+        transition: background-color 0.3s ease;
+      }
+      .table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .table-toolbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 200px;
+      }
+      .search-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--surface-container-low);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 8px 14px;
+        flex: 1;
+        max-width: 360px;
+        transition: border-color 0.2s;
+      }
+      .search-box:focus-within {
+        border-color: var(--color-primary);
+      }
+      .search-box input {
+        border: none;
+        background: transparent;
+        outline: none;
+        font-size: 13px;
+        color: var(--text-primary);
+        width: 100%;
+        font-family: inherit;
+      }
+      .search-box input::placeholder {
+        color: var(--text-secondary);
+      }
+      .search-box .material-icons {
+        font-size: 20px;
+        color: var(--text-secondary);
+      }
+
+      .table-toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toolbar-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-primary);
+        transition: all 0.2s;
+      }
+      .toolbar-btn:hover {
+        background: var(--surface-container-low);
+      }
+      .toolbar-btn .material-icons {
+        font-size: 18px;
+      }
+
+      /* TABLE */
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .data-table thead {
+        background: var(--surface-container-low);
+      }
+      .data-table th {
+        padding: 14px 20px;
+        text-align: left;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border-color);
+      }
+      .data-table th.numeric {
+        text-align: right;
+      }
+      .data-table td {
+        padding: 14px 20px;
+        font-size: 0.875rem;
+        color: var(--text-primary);
+        vertical-align: middle;
+      }
+      .data-table td.numeric {
+        text-align: right;
+        font-family: "Manrope", sans-serif;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .data-table tbody tr {
+        transition: background-color 0.15s;
+      }
+      .data-table tbody tr:hover {
+        background: var(--surface-container-low);
+      }
+
+      .sku-code {
+        font-family: "Manrope", monospace;
+        font-weight: 700;
+        color: var(--color-primary);
+        font-size: 0.85rem;
+      }
+      .product-desc {
+        font-size: 0.85rem;
+        color: var(--text-primary);
+        max-width: 320px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+      }
+
+      /* PAGINATION */
+      .table-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 24px;
+        border-top: 1px solid var(--border-color);
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .table-footer-info {
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+      .pagination {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .page-btn {
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        transition: all 0.15s;
+      }
+      .page-btn:hover:not(:disabled) {
+        background: var(--surface-container-low);
+        border-color: var(--color-primary);
+      }
+      .page-btn.active {
+        background: var(--color-primary);
+        color: white;
+        border-color: var(--color-primary);
+      }
+      .page-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .page-btn .material-icons {
+        font-size: 18px;
+      }
+      .rows-per-page {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+      .rows-per-page select {
+        padding: 4px 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-size: 13px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      /* LOGIN */
+      .login-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(1, 26, 59, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        backdrop-filter: blur(8px);
+      }
+      .login-box {
+        background: var(--bg-card);
+        padding: 40px;
+        border-radius: 16px;
+        width: 100%;
+        max-width: 400px;
+        box-shadow: var(--shadow-ambient);
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+      .login-box::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(
+          90deg,
+          #00a3e0 0%,
+          #6cbf3f 20%,
+          #ffd400 40%,
+          #f78005 60%,
+          #e6007e 80%,
+          #6f3fa0 100%
+        );
+      }
+      .login-brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      .login-brand img {
+        width: 48px;
+        height: 48px;
+        display: block;
+      }
+      .login-logo {
+        font-family: "Manrope", sans-serif;
+        font-weight: 800;
+        font-size: 1.5rem;
+        letter-spacing: -0.5px;
+        color: var(--text-primary);
+        line-height: 1;
+      }
+      .login-logo span {
+        color: var(--color-primary);
+      }
+      .login-subtitle {
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin-bottom: 28px;
+      }
+      .login-input {
+        width: 100%;
+        padding: 12px 16px;
+        margin-bottom: 14px;
+        border: 1px solid var(--border-color);
+        background: var(--surface-container-low);
+        color: var(--text-primary);
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.2s;
+        font-family: inherit;
+      }
+      .login-input:focus {
+        border-color: var(--color-primary);
+        border-width: 2px;
+      }
+      .login-btn {
+        width: 100%;
+        padding: 12px;
+        background: linear-gradient(135deg, #944a00, #f78005);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-top: 4px;
+      }
+      .login-btn:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+      }
+      .err-msg {
+        color: var(--color-wine);
+        font-size: 13px;
+        margin-top: 12px;
+        display: none;
+      }
+
+      .table-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        gap: 10px;
+      }
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--color-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .table-error {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        text-align: center;
+      }
+
+      /* RESPONSIVE */
+      @media (max-width: 768px) {
+        .app-header {
+          padding: 12px 16px;
+        }
+        .header-subtitle {
+          display: none;
+        }
+        .main-grid {
+          grid-template-columns: 1fr;
+          position: relative;
+        }
+        .main-grid.sidebar-closed {
+          grid-template-columns: 1fr;
+        }
+        #sidebar {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 260px;
+          height: 100%;
+          z-index: 200;
+          box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+          transition: transform 0.3s ease;
+          transform: translateX(-100%);
+        }
+        .main-grid:not(.sidebar-closed) #sidebar {
+          transform: translateX(0);
+        }
+        .sidebar-backdrop {
+          display: none;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 199;
+          pointer-events: none;
+        }
+        .main-grid:not(.sidebar-closed) .sidebar-backdrop {
+          display: block;
+          pointer-events: auto;
+        }
+        .main-content {
+          padding: 20px 16px;
+        }
+        .table-toolbar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .data-table th,
+        .data-table td {
+          padding: 10px 12px;
+        }
+        .product-desc {
+          max-width: 160px;
+        }
+      }
+      @media (max-width: 480px) {
+        .page-header h1 {
+          font-size: 1.3rem;
+        }
+        .info-bar {
+          gap: 8px;
+        }
+        .info-chip {
+          font-size: 12px;
+          padding: 6px 10px;
+        }
+      }
+
+      /* BACKTEST RESPONSIVE */
+      @media (max-width: 768px) {
+        .backtest-controls-header {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 10px;
+        }
+        .backtest-actions {
+          justify-content: stretch;
+        }
+        .backtest-actions .add-btn {
+          flex: 1;
+        }
+        #testesSection .add-btn {
+          justify-content: center;
+        }
+        .month-picker-grid {
+          grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
+          max-height: 220px;
+          padding: 10px;
+          gap: 6px;
+        }
+        .month-chip {
+          font-size: 12px;
+          padding: 7px 8px;
+        }
+        .month-picker-toolbar {
+          gap: 6px;
+        }
+        .month-picker-count {
+          width: 100%;
+          margin-left: 0;
+          order: 99;
+        }
+        .chip-btn {
+          padding: 5px 10px;
+          font-size: 11px;
+        }
+        .backtest-summary {
+          gap: 10px;
+        }
+        .backtest-summary .summary-card {
+          min-width: 0;
+          flex: 1 1 100%;
+          padding: 12px 14px;
+        }
+        .backtest-summary .summary-card .val {
+          font-size: 1.2rem;
+        }
+        .backtest-loading {
+          padding: 14px 16px;
+        }
+        .backtest-loading-head {
+          gap: 10px;
+        }
+        .backtest-results-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        #backtestResultsCard {
+          overflow: hidden;
+        }
+        #backtestResultsCard .table-toolbar {
+          padding: 12px 14px;
+        }
+        #backtestResultsCard .data-table th,
+        #backtestResultsCard .data-table td {
+          padding: 10px 12px;
+          font-size: 12px;
+        }
+        #backtestResultsCard .product-desc {
+          max-width: 180px;
+        }
+        .backtest-help {
+          font-size: 12px;
+          padding: 12px 14px;
+        }
+        .backtest-legend {
+          gap: 10px;
+        }
+        .backtest-errors {
+          font-size: 12px;
+          padding: 10px 14px;
+        }
+      }
+      @media (max-width: 480px) {
+        #testesSection .table-card {
+          padding: 14px !important;
+        }
+        .month-picker-grid {
+          grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+          max-height: 200px;
+        }
+        .month-chip {
+          font-size: 11px;
+          padding: 6px 6px;
+        }
+        .backtest-progress-meta {
+          font-size: 10px;
+        }
+        .backtest-loading-head .ttl {
+          font-size: 13px;
+        }
+        #backtestResultsCard .product-desc {
+          max-width: 140px;
+        }
+      }
+
+      /* USERS SECTION */
+      .users-section {
+        display: none;
+      }
+      .users-section.active {
+        display: block;
+        animation: fadeIn 0.3s ease;
+      }
+      .users-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+      }
+      .users-header h1 {
+        font-family: "Manrope", sans-serif;
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--text-primary);
+      }
+      .users-header .add-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 18px;
+        background: linear-gradient(135deg, #944a00, #f78005);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .users-header .add-btn:hover {
+        opacity: 0.9;
+      }
+      .users-count {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-top: 4px;
+      }
+      .action-btn {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+      .action-btn:hover {
+        background: var(--surface-container-low);
+        color: var(--text-primary);
+      }
+      .action-btn.danger:hover {
+        background: rgba(166, 57, 52, 0.1);
+        color: var(--color-wine);
+        border-color: var(--color-wine);
+      }
+
+      /* MODAL */
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(4px);
+      }
+      .modal-overlay.active {
+        display: flex;
+      }
+      .modal-box {
+        background: var(--bg-card);
+        border-radius: 12px;
+        padding: 28px;
+        width: 100%;
+        max-width: 440px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+      .modal-title {
+        font-family: "Manrope", sans-serif;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 20px;
+      }
+      .modal-field {
+        margin-bottom: 14px;
+      }
+      .modal-field label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .modal-field input {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid var(--border-color);
+        background: var(--surface-container-low);
+        color: var(--text-primary);
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+        font-family: inherit;
+        transition: border-color 0.2s;
+      }
+      .modal-field input:focus {
+        border-color: var(--color-primary);
+      }
+      .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 20px;
+      }
+      .modal-btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+      }
+      .modal-btn.cancel {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+      }
+      .modal-btn.cancel:hover {
+        background: var(--surface-container-low);
+      }
+      .modal-btn.primary {
+        background: linear-gradient(135deg, #944a00, #f78005);
+        color: white;
+      }
+      .modal-btn.primary:hover {
+        opacity: 0.9;
+      }
+      .modal-btn.danger {
+        background: var(--color-wine);
+        color: white;
+      }
+      .modal-btn.danger:hover {
+        opacity: 0.9;
+      }
+      .modal-error {
+        color: var(--color-wine);
+        font-size: 13px;
+        margin-top: 10px;
+        display: none;
+      }
+
+      /* ROLE BADGES */
+      .role-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: capitalize;
+      }
+      .role-badge.admin {
+        background: rgba(247, 128, 5, 0.12);
+        color: var(--color-primary);
+      }
+      .role-badge.visualizador {
+        background: rgba(76, 175, 80, 0.12);
+        color: #2e7d32;
+      }
+
+      /* ROLE SELECT */
+      .modal-field select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid var(--border-color);
+        background: var(--surface-container-low);
+        color: var(--text-primary);
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+        font-family: inherit;
+        cursor: pointer;
+        transition: border-color 0.2s;
+      }
+      .modal-field select:focus {
+        border-color: var(--color-primary);
+      }
+
+      /* HISTORY ALERT */
+      .history-alert {
+        background: var(--bg-card);
+        border-left: 4px solid var(--color-wine);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 20px;
+        box-shadow: var(--shadow-ambient);
+        font-size: 13px;
+        color: var(--text-primary);
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .history-alert.warn {
+        border-left-color: var(--color-primary);
+      }
+      .history-alert.ok {
+        border-left-color: var(--color-success);
+      }
+      .history-alert .alert-icon {
+        font-size: 22px;
+        color: var(--color-wine);
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .history-alert.warn .alert-icon {
+        color: var(--color-primary);
+      }
+      .history-alert.ok .alert-icon {
+        color: var(--color-success);
+      }
+      .history-alert .alert-title {
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+      .history-alert .alert-body {
+        color: var(--text-secondary);
+        line-height: 1.45;
+      }
+      .history-alert .alert-body strong {
+        color: var(--text-primary);
+      }
+      .history-alert code {
+        background: var(--surface-container-low);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-family: "Manrope", monospace;
+        font-size: 12px;
+      }
+
+      /* DROP ZONE */
+      .upload-card {
+        margin-bottom: 20px;
+      }
+      .drop-zone {
+        background: var(--bg-card);
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        padding: 28px 22px;
+        text-align: center;
+        transition: all 0.2s;
+      }
+      .drop-zone.dragover {
+        border-color: var(--color-primary);
+        background: rgba(247, 128, 5, 0.05);
+      }
+      .drop-zone .drop-icon {
+        font-size: 38px;
+        color: var(--color-primary);
+        margin-bottom: 6px;
+      }
+      .drop-zone .drop-title {
+        font-weight: 700;
+        font-size: 14px;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+      }
+      .drop-zone .drop-sub {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-bottom: 14px;
+      }
+      .drop-zone .drop-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .drop-status {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .drop-status.ok {
+        color: var(--color-success);
+        font-weight: 600;
+      }
+      .drop-status.err {
+        color: var(--color-wine);
+        font-weight: 600;
+      }
+      .drop-status.warn {
+        color: #b58105;
+        font-weight: 600;
+      }
+      .drop-zone.uploading {
+        opacity: 0.7;
+        pointer-events: none;
+        border-style: solid;
+      }
+      .drop-zone.uploading::after {
+        content: "Enviando...";
+        display: block;
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--color-primary);
+        font-weight: 600;
+      }
+
+      /* BACKTEST month picker */
+      .backtest-controls-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 12px;
+      }
+      .backtest-controls-label {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-primary);
+        letter-spacing: 0.2px;
+      }
+      .backtest-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .month-picker-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .month-picker-count {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--text-secondary);
+        font-weight: 600;
+      }
+      .chip-btn {
+        background: var(--surface-container-low);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 12px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .chip-btn:hover {
+        background: rgba(247, 128, 5, 0.08);
+        border-color: var(--color-primary);
+      }
+      .month-picker-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 8px;
+        max-height: 280px;
+        overflow-y: auto;
+        padding: 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        background: var(--surface-container-low);
+      }
+      .month-chip {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        background: var(--bg-card);
+        border: 1.5px solid var(--border-color);
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.15s;
+      }
+      .month-chip:hover {
+        border-color: var(--color-primary);
+      }
+      .month-chip input {
+        accent-color: var(--color-primary);
+        margin: 0;
+      }
+      .month-chip.selected {
+        background: rgba(247, 128, 5, 0.12);
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+      }
+
+      /* MONTH HEADER STATES */
+      .data-table th.numeric.col-current {
+        color: var(--color-primary);
+      }
+      .data-table th.numeric.col-current::after {
+        content: " (atual)";
+        font-weight: 500;
+        opacity: 0.8;
+      }
+      .data-table td.numeric .tol {
+        font-weight: 500;
+        font-size: 0.7rem;
+        color: var(--text-secondary);
+        margin-left: 4px;
+        font-variant-numeric: normal;
+      }
+      .data-table td.numeric .insufficient {
+        font-style: italic;
+        color: var(--text-secondary);
+        font-weight: 500;
+      }
+
+      /* FORMAT BADGES */
+      .formato-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-left: 8px;
+      }
+      .formato-badge.comprados {
+        background: rgba(33, 150, 243, 0.12);
+        color: #1976d2;
+      }
+      .formato-badge.sgb {
+        background: rgba(166, 57, 52, 0.12);
+        color: var(--color-wine);
+      }
+      .formato-badge.warn {
+        background: rgba(247, 128, 5, 0.15);
+        color: var(--color-primary);
+      }
+
+      /* BACKTEST SUMMARY */
+      .backtest-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .backtest-summary .summary-card {
+        flex: 1;
+        min-width: 180px;
+        background: var(--bg-card);
+        border-radius: 10px;
+        padding: 14px 18px;
+        box-shadow: var(--shadow-ambient);
+      }
+      .backtest-summary .summary-card .lbl {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-secondary);
+      }
+      .backtest-summary .summary-card .val {
+        font-family: "Manrope", sans-serif;
+        font-weight: 800;
+        font-size: 1.4rem;
+        color: var(--text-primary);
+        margin-top: 4px;
+      }
+      .backtest-summary .summary-card .sub {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 2px;
+      }
+      .err-cell.good {
+        color: var(--color-success);
+        font-weight: 700;
+      }
+      .err-cell.warn {
+        color: var(--color-primary);
+        font-weight: 700;
+      }
+      .err-cell.bad {
+        color: var(--color-wine);
+        font-weight: 700;
+      }
+
+      /* Marcador discreto de ajuste v2 (substitui empilhamento de emojis). */
+      .adj-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin-left: 4px;
+        vertical-align: middle;
+        opacity: 0.85;
+      }
+      .adj-regime-down { background: var(--color-wine); }
+      .adj-regime-up   { background: var(--color-primary); }
+      .adj-fence       { background: var(--color-primary); }
+      .adj-cap         { background: var(--text-secondary); }
+      .adj-v1sel       { background: var(--text-secondary); opacity: 0.5; }
+      .adj-bias-down   { background: var(--text-secondary); opacity: 0.6; }
+      .adj-bias-up     { background: var(--text-secondary); opacity: 0.6; }
+
+      /* BACKTEST PIVOT TABLE */
+      .backtest-pivot-table th.month-group {
+        text-align: center !important;
+        border-left: 1px solid var(--border-color);
+        background: rgba(247, 128, 5, 0.06);
+        color: var(--color-primary);
+        font-weight: 800;
+      }
+      .backtest-pivot-table th.sub {
+        font-size: 0.65rem;
+        font-weight: 600;
+        opacity: 0.85;
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
+      .backtest-pivot-table th.sub:nth-child(3n + 1) {
+        border-left: 1px solid var(--border-color);
+      }
+      .backtest-pivot-table td.muted {
+        color: var(--text-secondary);
+        opacity: 0.6;
+      }
+      .backtest-table-scroll {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-color: var(--color-primary) var(--surface-container-low);
+      }
+      .backtest-table-scroll::-webkit-scrollbar {
+        height: 10px;
+      }
+      .backtest-table-scroll::-webkit-scrollbar-track {
+        background: var(--surface-container-low);
+      }
+      .backtest-table-scroll::-webkit-scrollbar-thumb {
+        background: var(--color-primary);
+        border-radius: 999px;
+      }
+      .backtest-table-scroll .data-table {
+        min-width: max-content;
+      }
+      .backtest-pivot-table th,
+      .backtest-pivot-table td {
+        white-space: nowrap;
+      }
+      .backtest-pivot-table .product-desc {
+        max-width: 280px;
+        display: inline-block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        vertical-align: middle;
+      }
+      .bt-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-primary);
+        cursor: pointer;
+        background: var(--surface-container-low);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 6px 12px;
+        user-select: none;
+      }
+      .bt-toggle input {
+        accent-color: var(--color-primary);
+        margin: 0;
+      }
+      .bt-toggle:hover {
+        border-color: var(--color-primary);
+      }
+      .delta-chip {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 5px;
+        border-radius: 999px;
+        margin-left: 4px;
+        vertical-align: middle;
+      }
+      .delta-chip.good {
+        background: rgba(76, 175, 80, 0.15);
+        color: var(--color-success);
+      }
+      .delta-chip.bad {
+        background: rgba(166, 57, 52, 0.12);
+        color: var(--color-wine);
+      }
+
+      /* Generic add-btn (also used outside .users-header) */
+      .add-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 18px;
+        background: linear-gradient(135deg, #944a00, #f78005);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 2px 6px rgba(247, 128, 5, 0.25);
+      }
+      .add-btn:hover:not(:disabled) {
+        opacity: 0.92;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(247, 128, 5, 0.32);
+      }
+      .add-btn:disabled {
+        opacity: 0.65;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+      .add-btn.secondary {
+        background: var(--surface-container-low);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        box-shadow: none;
+      }
+      .add-btn.secondary:hover:not(:disabled) {
+        border-color: var(--color-wine);
+        color: var(--color-wine);
+        box-shadow: none;
+        transform: none;
+      }
+      .add-btn .btn-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.45);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      /* BACKTEST LOADING OVERLAY */
+      .backtest-loading {
+        margin-top: 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 20px 22px;
+        box-shadow: var(--shadow-ambient);
+        animation: fadeIn 0.25s ease;
+      }
+      .backtest-loading-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .backtest-loading-head .spinner {
+        flex-shrink: 0;
+      }
+      .backtest-loading-head .ttl {
+        font-weight: 700;
+        color: var(--text-primary);
+        font-size: 14px;
+      }
+      .backtest-loading-head .sub {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin-top: 2px;
+      }
+      .backtest-progress-track {
+        height: 8px;
+        background: var(--surface-container-low);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .backtest-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #944a00, #f78005);
+        border-radius: 999px;
+        transition: width 0.3s ease;
+        width: 0%;
+      }
+      .backtest-progress-meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        color: var(--text-secondary);
+        margin-top: 6px;
+        font-weight: 600;
+      }
+
+      /* GLOBAL SUMMARY CARD (destacado) */
+      .backtest-summary .summary-card.global {
+        background: linear-gradient(
+          135deg,
+          rgba(247, 128, 5, 0.08),
+          rgba(247, 128, 5, 0.02)
+        );
+        border: 1.5px solid rgba(247, 128, 5, 0.35);
+      }
+      .backtest-summary .summary-card .val.good {
+        color: var(--color-success);
+      }
+      .backtest-summary .summary-card .val.warn {
+        color: var(--color-primary);
+      }
+      .backtest-summary .summary-card .val.bad {
+        color: var(--color-wine);
+      }
+
+      /* HELP / LEGEND */
+      .backtest-help {
+        margin-top: 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--color-primary);
+        border-radius: 10px;
+        padding: 14px 18px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        line-height: 1.55;
+      }
+      .backtest-help strong {
+        color: var(--text-primary);
+      }
+      .backtest-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 8px;
+      }
+      .backtest-legend .lg-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .backtest-legend .lg-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .lg-dot.good { background: var(--color-success); }
+      .lg-dot.warn { background: var(--color-primary); }
+      .lg-dot.bad  { background: var(--color-wine); }
+
+      /* ERRORS PANEL */
+      .backtest-errors {
+        margin-top: 16px;
+        background: rgba(166, 57, 52, 0.06);
+        border: 1px solid rgba(166, 57, 52, 0.35);
+        border-radius: 10px;
+        padding: 12px 16px;
+        font-size: 13px;
+        color: var(--color-wine);
+      }
+      .backtest-errors .err-title {
+        font-weight: 700;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .backtest-errors ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      /* Status text states */
+      #backtestStatus.is-error {
+        color: var(--color-wine);
+        font-weight: 600;
+      }
+      #backtestStatus.is-success {
+        color: var(--color-success);
+        font-weight: 600;
+      }
+
+      /* Results header (count + clear) */
+      .backtest-results-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 20px;
+        margin-bottom: -8px;
+      }
+      .backtest-results-header .meta {
+        font-size: 13px;
+        color: var(--text-secondary);
+        font-weight: 600;
+      }
+      .backtest-results-header .meta strong {
+        color: var(--text-primary);
+      }
+      .backtest-results-header .meta .cached {
+        margin-left: 8px;
+        background: rgba(247, 128, 5, 0.12);
+        color: var(--color-primary);
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app-container">
+      <header class="app-header">
+        <div class="header-left">
+          <button
+            class="toggle-sidebar-btn"
+            id="toggleSidebarBtn"
+            title="Alternar menu"
+          >
+            <i data-lucide="panel-left"></i>
+          </button>
+          <div class="logo-area">
+            <div class="app-logo">
+              <img
+                src="https://www.universotintas.com.br/wp-content/uploads/2025/04/logo-white-300x83.webp"
+                alt="Universo Tintas"
+              />
+            </div>
+            <div class="header-divider"></div>
+            <div class="header-subtitle">Painel de Previsões</div>
+          </div>
+        </div>
+        <div class="header-right"></div>
+      </header>
+
+      <div class="main-grid" id="mainGrid">
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+        <aside id="sidebar">
+          <nav class="sidebar-nav">
+            <div class="nav-section-title">Menu</div>
+            <button
+              class="nav-item predict"
+              id="predictBtn"
+              data-page="predict"
+            >
+              <i data-lucide="sparkles"></i>
+              <span>Realizar Previsão</span>
+            </button>
+            <button class="nav-item active" data-page="forecast">
+              <i data-lucide="bar-chart-3"></i>
+              <span>Previsão de Vendas</span>
+            </button>
+            <button class="nav-item" data-page="testes">
+              <i data-lucide="flask-conical"></i>
+              <span>Testes (Backtest)</span>
+            </button>
+            <button class="nav-item" id="usersNavBtn" data-page="users">
+              <i data-lucide="users"></i>
+              <span>Usuários</span>
+            </button>
+            <button class="nav-item" id="historyUploadBtn" type="button">
+              <i data-lucide="upload"></i>
+              <span>Inserir Histórico</span>
+            </button>
+          </nav>
+          <div class="sidebar-footer">
+            <div class="user-profile">
+              <div class="user-avatar" id="userAvatar">AD</div>
+              <div class="user-info">
+                <div class="user-name" id="userName">Administrador</div>
+                <div class="user-role" id="userRole">—</div>
+              </div>
+            </div>
+            <div class="footer-actions">
+              <button
+                class="footer-btn"
+                id="themeToggleBtn"
+                title="Alternar Tema"
+              >
+                <i data-lucide="moon" style="width: 14px; height: 14px"></i>
+                <span>Tema</span>
+              </button>
+              <button class="footer-btn" id="logoutBtn" title="Sair do sistema">
+                <i data-lucide="log-out" style="width: 14px; height: 14px"></i>
+                <span>Sair</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <main class="main-content">
+          <div id="forecastSection">
+            <div class="page-header">
+              <h1>Previsão Detalhada por SKU</h1>
+              <p>
+                Mês atual + 2 próximos meses projetados pelo modelo
+                determinístico (ensemble).
+              </p>
+            </div>
+            <div class="info-bar">
+              <div class="info-chip">
+                <span class="material-icons">history</span>
+                Previsto por último em: <span id="lastPredictedDate">—</span>
+              </div>
+              <div class="info-chip">
+                <span class="material-icons">folder_open</span>
+                <span id="totalSkuCount">0</span> SKUs
+              </div>
+              <div class="info-chip">
+                <span class="material-icons">event</span>
+                Último mês no histórico: <span id="lastHistoryMonth">—</span>
+              </div>
+              <div class="info-chip">
+                <span class="material-icons">file_download</span>
+                <button
+                  type="button"
+                  id="downloadExcelBtn"
+                  class="info-link"
+                  disabled
+                  title="Baixar planilha (.xlsx) com a previsão atual"
+                >Baixar Excel</button>
+              </div>
+            </div>
+
+            <!-- History status / missing months alert -->
+            <div
+              id="historyAlert"
+              class="history-alert"
+              style="display: none"
+            ></div>
+
+            <div class="table-card">
+              <div class="table-toolbar">
+                <div class="table-toolbar-left">
+                  <div class="search-box">
+                    <span class="material-icons">search</span>
+                    <input
+                      type="text"
+                      id="searchInput"
+                      placeholder="Buscar por SKU ou descrição..."
+                    />
+                  </div>
+                </div>
+                <div class="table-toolbar-right">
+                  <button class="toolbar-btn" id="filterBtn">
+                    <span class="material-icons">filter_list</span>
+                    Filtrar
+                  </button>
+                </div>
+              </div>
+              <div id="tableContainer">
+                <div class="table-loading" id="tableLoading">
+                  <div class="backtest-loading" style="margin-top: 0; width: 100%; max-width: 520px;">
+                    <div class="backtest-loading-head">
+                      <div class="spinner"></div>
+                      <div>
+                        <div class="ttl" id="tableLoadingTitle">Carregando previsões...</div>
+                        <div class="sub" id="tableLoadingText">Buscando dados em cache</div>
+                      </div>
+                    </div>
+                    <div class="backtest-progress-track">
+                      <div class="backtest-progress-bar" id="tableLoadingBar" style="width: 0%"></div>
+                    </div>
+                    <div class="backtest-progress-meta">
+                      <span id="tableLoadingLabel">—</span>
+                      <span id="tableLoadingPct">—</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-error" id="tableError" style="display: none">
+                  <span
+                    class="material-icons"
+                    style="
+                      font-size: 40px;
+                      color: var(--color-wine);
+                      margin-bottom: 12px;
+                    "
+                    >error_outline</span
+                  >
+                  <p
+                    style="
+                      font-size: 15px;
+                      font-weight: 600;
+                      color: var(--text-primary);
+                      margin-bottom: 4px;
+                    "
+                  >
+                    Erro ao carregar previsões
+                  </p>
+                  <p
+                    style="font-size: 13px; color: var(--text-secondary)"
+                    id="tableErrorDetail"
+                  ></p>
+                  <button
+                    class="toolbar-btn"
+                    style="margin-top: 16px"
+                    onclick="loadAndRender()"
+                  >
+                    <span class="material-icons">refresh</span>
+                    Tentar novamente
+                  </button>
+                </div>
+                <div class="table-error" id="tableEmpty" style="display: none">
+                  <span
+                    class="material-icons"
+                    style="
+                      font-size: 40px;
+                      color: var(--color-primary);
+                      margin-bottom: 12px;
+                    "
+                    >inbox</span
+                  >
+                  <p
+                    style="
+                      font-size: 15px;
+                      font-weight: 600;
+                      color: var(--text-primary);
+                      margin-bottom: 4px;
+                    "
+                  >
+                    Nenhuma previsão encontrada
+                  </p>
+                  <p style="font-size: 13px; color: var(--text-secondary)">
+                    Realize a primeira previsão clicando no botão abaixo.
+                  </p>
+                  <button
+                    class="toolbar-btn"
+                    id="emptyPredictBtn"
+                    style="
+                      margin-top: 16px;
+                      background: var(--color-primary);
+                      color: #fff;
+                    "
+                  >
+                    <span class="material-icons">auto_awesome</span>
+                    <span>Realizar Previsão</span>
+                  </button>
+                </div>
+                <table class="data-table" id="dataTable" style="display: none">
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Descrição</th>
+                      <th class="numeric" id="colMonth1"></th>
+                      <th class="numeric" id="colMonth2"></th>
+                      <th class="numeric" id="colMonth3"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tableBody"></tbody>
+                </table>
+              </div>
+              <div class="table-footer">
+                <div class="table-footer-info" id="footerInfo">
+                  Mostrando 0 de 0 SKUs
+                </div>
+                <div style="display: flex; align-items: center; gap: 16px">
+                  <div class="rows-per-page">
+                    <span>Linhas:</span>
+                    <select id="rowsPerPage">
+                      <option value="5">5</option>
+                      <option value="10" selected>10</option>
+                      <option value="25">25</option>
+                      <option value="50">50</option>
+                    </select>
+                  </div>
+                  <div class="pagination" id="pagination"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TESTES (Backtest) -->
+          <div class="users-section" id="testesSection">
+            <div class="page-header">
+              <h1>Testes — Backtest histórico</h1>
+              <p>
+                Selecione um ou mais meses do histórico para rodar a previsão
+                como se aquela fosse a data atual e comparar com o valor real.
+              </p>
+            </div>
+
+            <div class="table-card" style="padding: 20px">
+              <div class="backtest-controls-header">
+                <label class="backtest-controls-label">Meses para testar</label>
+                <div class="backtest-actions">
+                  <button class="add-btn" id="runBacktestBtn">
+                    <span class="material-icons" style="font-size: 18px"
+                      >play_arrow</span
+                    >
+                    Rodar backtest
+                  </button>
+                  <button
+                    class="add-btn secondary"
+                    id="clearBacktestBtn"
+                    style="display: none"
+                    title="Remover resultados salvos"
+                  >
+                    <span class="material-icons" style="font-size: 18px"
+                      >delete_outline</span
+                    >
+                    Limpar resultados
+                  </button>
+                </div>
+              </div>
+
+              <div class="month-picker-toolbar">
+                <button type="button" class="chip-btn" id="btSelectLast3">Últimos 3 meses</button>
+                <button type="button" class="chip-btn" id="btSelectLast6">Últimos 6 meses</button>
+                <button type="button" class="chip-btn" id="btSelectClear">Limpar</button>
+                <span id="backtestSelectedCount" class="month-picker-count">0 selecionados</span>
+              </div>
+              <div id="backtestMonths" class="month-picker-grid"></div>
+
+              <div
+                id="backtestStatus"
+                style="
+                  margin-top: 12px;
+                  font-size: 13px;
+                  color: var(--text-secondary);
+                "
+              ></div>
+
+              <!-- Loading overlay (visible while running) -->
+              <div id="backtestLoading" class="backtest-loading" style="display:none">
+                <div class="backtest-loading-head">
+                  <div class="spinner"></div>
+                  <div>
+                    <div class="ttl" id="backtestLoadingTitle">Executando backtest...</div>
+                    <div class="sub" id="backtestLoadingSub">Preparando planilha</div>
+                  </div>
+                </div>
+                <div class="backtest-progress-track">
+                  <div class="backtest-progress-bar" id="backtestProgressBar"></div>
+                </div>
+                <div class="backtest-progress-meta">
+                  <span id="backtestProgressLabel">0 de 0 SKUs</span>
+                  <span id="backtestProgressPct">0%</span>
+                </div>
+              </div>
+
+              <!-- Errors panel -->
+              <div id="backtestErrors" class="backtest-errors" style="display:none"></div>
+            </div>
+
+            <div
+              id="backtestSummary"
+              class="backtest-summary"
+              style="display: none; margin-top: 20px"
+            ></div>
+
+            <!-- Help / legend -->
+            <div id="backtestHelp" class="backtest-help" style="display:none">
+              <div>
+                <strong>Como ler estes resultados:</strong> cada mês foi previsto
+                como se ainda não tivesse acontecido, e o resultado foi comparado
+                com o que de fato aconteceu. O <strong>MAPE</strong> é o erro
+                percentual médio absoluto — quanto menor, melhor. A
+                <strong>tolerância</strong> é a margem aceita por SKU; SKUs dentro
+                dela são considerados acertos.
+              </div>
+              <div class="backtest-legend">
+                <span class="lg-item"><span class="lg-dot good"></span> Dentro da tolerância (acerto)</span>
+                <span class="lg-item"><span class="lg-dot warn"></span> Até 2× a tolerância (atenção)</span>
+                <span class="lg-item"><span class="lg-dot bad"></span> Acima de 2× a tolerância (erro alto)</span>
+              </div>
+            </div>
+
+            <div
+              class="backtest-results-header"
+              id="backtestResultsHeader"
+              style="display:none"
+            >
+              <div class="meta" id="backtestResultsMeta"></div>
+            </div>
+
+            <div
+              id="backtestResultsCard"
+              class="table-card"
+              style="margin-top: 12px; display: none"
+            >
+              <div class="table-toolbar">
+                <div class="table-toolbar-left">
+                  <div class="search-box">
+                    <span class="material-icons">search</span>
+                    <input
+                      type="text"
+                      id="backtestSearch"
+                      placeholder="Buscar SKU ou descrição..."
+                    />
+                  </div>
+                </div>
+                <div class="table-toolbar-right"></div>
+              </div>
+              <div class="backtest-table-scroll">
+                <table class="data-table backtest-pivot-table">
+                  <thead id="backtestTableHead"></thead>
+                  <tbody id="backtestTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="users-section" id="usersSection">
+            <div class="users-header">
+              <div>
+                <h1>Gerenciar Usuários</h1>
+                <p class="users-count">
+                  <span id="usersCount">0</span> usuários cadastrados
+                </p>
+              </div>
+              <button class="add-btn" id="addUserBtn">
+                <span class="material-icons" style="font-size: 18px"
+                  >person_add</span
+                >
+                Novo Usuário
+              </button>
+            </div>
+            <div class="table-card">
+              <div class="table-loading" id="usersLoading">
+                <div class="spinner"></div>
+                Carregando usuários...
+              </div>
+              <table class="data-table" id="usersTable" style="display: none">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>E-mail</th>
+                    <th>Cargo</th>
+                    <th>Criado em</th>
+                    <th style="width: 100px">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- History Upload Modal (admin only) -->
+    <div class="modal-overlay" id="historyUploadModal">
+      <div class="modal-box" style="max-width: 560px">
+        <div class="modal-title">Inserir Histórico</div>
+        <p style="font-size: 13px; color: var(--text-secondary); margin: -4px 0 14px">
+          Substitui a planilha padrão (Google Sheets) usada como base para todas as previsões.
+        </p>
+        <div id="uploadCard" class="upload-card" style="margin: 0">
+          <div id="dropZone" class="drop-zone">
+            <span class="material-icons drop-icon">cloud_upload</span>
+            <div class="drop-title">Arraste a planilha de histórico aqui</div>
+            <div class="drop-sub">Aceita arquivos .xlsx ou .xls.</div>
+            <div class="drop-actions">
+              <button type="button" class="toolbar-btn" id="chooseFileBtn">
+                <span class="material-icons">folder_open</span>
+                Escolher arquivo
+              </button>
+              <span id="dropStatus" class="drop-status"></span>
+            </div>
+            <input type="file" id="fileInput" accept=".xlsx,.xls" style="display: none" />
+          </div>
+        </div>
+        <div class="modal-actions" style="margin-top: 16px">
+          <button type="button" class="modal-btn cancel" id="historyUploadCloseBtn">Fechar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- User Create/Edit Modal -->
+    <div class="modal-overlay" id="userModal">
+      <div class="modal-box">
+        <div class="modal-title" id="userModalTitle">Novo Usuário</div>
+        <form id="userModalForm">
+          <div class="modal-field" id="emailField">
+            <label>E-mail</label>
+            <input
+              type="email"
+              id="modalEmail"
+              required
+              placeholder="usuario@exemplo.com"
+            />
+          </div>
+          <div class="modal-field" id="passwordField">
+            <label>Senha</label>
+            <input
+              type="password"
+              id="modalPassword"
+              required
+              minlength="6"
+              placeholder="Mínimo 6 caracteres"
+            />
+          </div>
+          <div class="modal-field">
+            <label>Nome completo</label>
+            <input
+              type="text"
+              id="modalFullName"
+              placeholder="Nome do usuário"
+            />
+          </div>
+          <div class="modal-field" id="roleField">
+            <label>Cargo</label>
+            <select id="modalRole">
+              <option value="visualizador">Visualizador</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <div class="modal-error" id="modalError"></div>
+          <div class="modal-actions">
+            <button type="button" class="modal-btn cancel" id="modalCancelBtn">
+              Cancelar
+            </button>
+            <button type="submit" class="modal-btn primary" id="modalSaveBtn">
+              Salvar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="deleteModal">
+      <div class="modal-box">
+        <div class="modal-title">Confirmar Exclusão</div>
+        <p
+          style="
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+          "
+        >
+          Tem certeza que deseja excluir o usuário:
+        </p>
+        <p
+          style="
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+          "
+          id="deleteUserName"
+        ></p>
+        <p
+          style="font-size: 13px; color: var(--color-wine); margin-bottom: 16px"
+        >
+          Esta ação não pode ser desfeita.
+        </p>
+        <div class="modal-error" id="deleteModalError"></div>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn cancel" id="deleteCancelBtn">
+            Cancelar
+          </button>
+          <button type="button" class="modal-btn danger" id="deleteConfirmBtn">
+            Excluir
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-overlay" id="loginOverlay">
+      <div class="login-box">
+        <div class="login-brand">
+          <img
+            src="https://www.universotintas.com.br/wp-content/uploads/2025/04/cropped-apple-touch-icon-180x180.png"
+            alt="Universo Tintas"
+          />
+          <div class="login-logo">UNIVERSO<span>TINTAS</span></div>
+        </div>
+        <div class="login-subtitle">Painel de Previsão de Vendas</div>
+        <form id="loginForm">
+          <input
+            type="email"
+            class="login-input"
+            id="emailInput"
+            placeholder="E-mail"
+            required
+          />
+          <input
+            type="password"
+            class="login-input"
+            id="passwordInput"
+            placeholder="Senha"
+            required
+          />
+          <button type="submit" class="login-btn" id="loginBtn">Entrar</button>
+          <div class="err-msg" id="loginError">Credenciais inválidas</div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      lucide.createIcons();
+
+      // ============================================
+      // SAFE STORAGE (theme only)
+      // ============================================
+      const storage = {
+        get(key) {
+          try {
+            return localStorage.getItem(key);
+          } catch (e) {
+            return null;
+          }
+        },
+        set(key, val) {
+          try {
+            localStorage.setItem(key, val);
+          } catch (e) {}
+        },
+      };
+
+      // ============================================
+      // SUPABASE INIT
+      // ============================================
+      const SUPABASE_URL = "https://longflatworm-supabase.cloudfy.live";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg";
+
+      // Persistent auth storage: tries localStorage -> cookies -> memory.
+      // Necessary because sandboxed/partitioned contexts may silently
+      // disable localStorage writes, losing the session on reload.
+      function buildAuthStorage() {
+        // 1) Try real localStorage (write/read/cleanup)
+        try {
+          const k = "__ls_probe__";
+          localStorage.setItem(k, "1");
+          if (localStorage.getItem(k) === "1") {
+            localStorage.removeItem(k);
+            return {
+              getItem: (key) => {
+                try {
+                  return localStorage.getItem(key);
+                } catch (e) {
+                  return null;
+                }
+              },
+              setItem: (key, val) => {
+                try {
+                  localStorage.setItem(key, val);
+                } catch (e) {}
+              },
+              removeItem: (key) => {
+                try {
+                  localStorage.removeItem(key);
+                } catch (e) {}
+              },
+            };
+          }
+        } catch (e) {}
+
+        // 2) Fallback to cookies (with chunking for long JWTs; ~4KB per cookie)
+        function setCookie(name, val, days) {
+          const d = new Date();
+          d.setTime(d.getTime() + days * 864e5);
+          document.cookie =
+            name +
+            "=" +
+            encodeURIComponent(val) +
+            "; expires=" +
+            d.toUTCString() +
+            "; path=/; SameSite=Lax";
+        }
+        function getCookie(name) {
+          const match = document.cookie.match(
+            new RegExp(
+              "(?:^|; )" +
+                name.replace(/([.$?*|{}()\[\]\\/+^])/g, "\\$1") +
+                "=([^;]*)",
+            ),
+          );
+          return match ? decodeURIComponent(match[1]) : null;
+        }
+        function delCookie(name) {
+          document.cookie =
+            name + "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+        }
+        try {
+          const ck = "__ck_probe__";
+          setCookie(ck, "1", 1);
+          if (getCookie(ck) === "1") {
+            delCookie(ck);
+            const CHUNK = 3500;
+            return {
+              getItem: (key) => {
+                const meta = getCookie(key + "__n");
+                if (!meta) return getCookie(key);
+                const n = parseInt(meta, 10);
+                let out = "";
+                for (let i = 0; i < n; i++) {
+                  const part = getCookie(key + "__" + i);
+                  if (part == null) return null;
+                  out += part;
+                }
+                return out;
+              },
+              setItem: (key, val) => {
+                if (val.length <= CHUNK) {
+                  setCookie(key, val, 7);
+                  delCookie(key + "__n");
+                  return;
+                }
+                const n = Math.ceil(val.length / CHUNK);
+                setCookie(key + "__n", String(n), 7);
+                for (let i = 0; i < n; i++) {
+                  setCookie(
+                    key + "__" + i,
+                    val.slice(i * CHUNK, (i + 1) * CHUNK),
+                    7,
+                  );
+                }
+                delCookie(key);
+              },
+              removeItem: (key) => {
+                delCookie(key);
+                const meta = getCookie(key + "__n");
+                if (meta) {
+                  const n = parseInt(meta, 10);
+                  for (let i = 0; i < n; i++) delCookie(key + "__" + i);
+                  delCookie(key + "__n");
+                }
+              },
+            };
+          }
+        } catch (e) {}
+
+        // 3) Memory fallback (session will not persist across reloads)
+        console.warn(
+          "[auth] No persistent storage available; session will be lost on reload.",
+        );
+        const mem = {};
+        return {
+          getItem: (k) => (k in mem ? mem[k] : null),
+          setItem: (k, v) => {
+            mem[k] = String(v);
+          },
+          removeItem: (k) => {
+            delete mem[k];
+          },
+        };
+      }
+
+      const authStorage = buildAuthStorage();
+
+      // Diagnostic: inspect storage state at boot to debug persistence issues
+      (function diagnoseStorage() {
+        const safe = (fn, fallback) => {
+          try {
+            return fn();
+          } catch (e) {
+            return fallback;
+          }
+        };
+        const key = "universo-tintas-auth";
+        const raw = safe(() => authStorage.getItem(key), null);
+        const lsKeys = safe(() => Object.keys(localStorage), "blocked");
+        const cookiesLen = safe(
+          () => (document.cookie || "").length,
+          "blocked (sandboxed)",
+        );
+        const inIframe = window.top !== window.self;
+        const sandboxed = cookiesLen === "blocked (sandboxed)";
+        console.log(
+          "[auth] Boot diag:",
+          "\n  location:",
+          location.href,
+          "\n  origin:",
+          location.origin,
+          "\n  in iframe:",
+          inIframe,
+          "\n  sandboxed (no allow-same-origin):",
+          sandboxed,
+          "\n  stored session present:",
+          !!raw,
+          "\n  stored size:",
+          raw ? raw.length : 0,
+          "\n  localStorage keys:",
+          lsKeys,
+          "\n  cookies length:",
+          cookiesLen,
+        );
+        if (sandboxed) {
+          console.warn(
+            "[auth] This page is running inside a sandboxed iframe without 'allow-same-origin'.\n" +
+              "Browsers treat it as an opaque origin, so NO persistent storage is available\n" +
+              "(localStorage, sessionStorage, cookies and IndexedDB are all isolated per load).\n" +
+              "Session persistence across reloads is IMPOSSIBLE in this context.\n" +
+              "To fix, the host page must add 'allow-same-origin' to the iframe sandbox attribute,\n" +
+              "or the app must be served outside of the sandboxed iframe (top-level navigation).",
+          );
+        }
+      })();
+
+      const supabaseClient = supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        {
+          auth: {
+            storage: authStorage,
+            storageKey: "universo-tintas-auth",
+            autoRefreshToken: true,
+            persistSession: true,
+            detectSessionInUrl: false,
+            flowType: "implicit",
+            lock: function (_name, _acquireTimeout, fn) {
+              return fn();
+            },
+          },
+        },
+      );
+
+      // ============================================
+      // AUTH
+      // ============================================
+      const API_GET_PREDICTIONS =
+        "https://longflatworm-n8n.cloudfy.live/webhook/GetPredict";
+      const API_POST_PREDICT =
+        "https://longflatworm-n8n.cloudfy.live/webhook/PredictNextThreeMonths";
+      const API_REPLACE_HISTORY =
+        "https://longflatworm-n8n.cloudfy.live/webhook/universo-replace-dados-cadastrais";
+      const API_BACKTEST =
+        "https://longflatworm-n8n.cloudfy.live/webhook/Backtest";
+
+      const els = {
+        loginOverlay: document.getElementById("loginOverlay"),
+        loginForm: document.getElementById("loginForm"),
+        emailInput: document.getElementById("emailInput"),
+        passwordInput: document.getElementById("passwordInput"),
+        loginError: document.getElementById("loginError"),
+        loginBtn: document.getElementById("loginBtn"),
+        themeToggleBtn: document.getElementById("themeToggleBtn"),
+        logoutBtn: document.getElementById("logoutBtn"),
+        searchInput: document.getElementById("searchInput"),
+        tableBody: document.getElementById("tableBody"),
+        dataTable: document.getElementById("dataTable"),
+        tableLoading: document.getElementById("tableLoading"),
+        tableLoadingText: document.getElementById("tableLoadingText"),
+        tableLoadingTitle: document.getElementById("tableLoadingTitle"),
+        tableLoadingBar: document.getElementById("tableLoadingBar"),
+        tableLoadingLabel: document.getElementById("tableLoadingLabel"),
+        tableLoadingPct: document.getElementById("tableLoadingPct"),
+        tableError: document.getElementById("tableError"),
+        tableErrorDetail: document.getElementById("tableErrorDetail"),
+        tableEmpty: document.getElementById("tableEmpty"),
+        emptyPredictBtn: document.getElementById("emptyPredictBtn"),
+        footerInfo: document.getElementById("footerInfo"),
+        pagination: document.getElementById("pagination"),
+        rowsPerPage: document.getElementById("rowsPerPage"),
+        totalSkuCount: document.getElementById("totalSkuCount"),
+        lastPredictedDate: document.getElementById("lastPredictedDate"),
+        predictBtn: document.getElementById("predictBtn"),
+        userAvatar: document.getElementById("userAvatar"),
+        userName: document.getElementById("userName"),
+        userRole: document.getElementById("userRole"),
+        usersNavBtn: document.getElementById("usersNavBtn"),
+        lastHistoryMonth: document.getElementById("lastHistoryMonth"),
+        historyAlert: document.getElementById("historyAlert"),
+        uploadCard: document.getElementById("uploadCard"),
+        dropZone: document.getElementById("dropZone"),
+        fileInput: document.getElementById("fileInput"),
+        chooseFileBtn: document.getElementById("chooseFileBtn"),
+        dropStatus: document.getElementById("dropStatus"),
+        backtestMonths: document.getElementById("backtestMonths"),
+        runBacktestBtn: document.getElementById("runBacktestBtn"),
+        clearBacktestBtn: document.getElementById("clearBacktestBtn"),
+        backtestStatus: document.getElementById("backtestStatus"),
+        backtestSummary: document.getElementById("backtestSummary"),
+        backtestHelp: document.getElementById("backtestHelp"),
+        backtestResultsHeader: document.getElementById("backtestResultsHeader"),
+        backtestResultsMeta: document.getElementById("backtestResultsMeta"),
+        backtestResultsCard: document.getElementById("backtestResultsCard"),
+        backtestTableHead: document.getElementById("backtestTableHead"),
+        backtestTableBody: document.getElementById("backtestTableBody"),
+        backtestSearch: document.getElementById("backtestSearch"),
+
+        backtestLoading: document.getElementById("backtestLoading"),
+        backtestLoadingTitle: document.getElementById("backtestLoadingTitle"),
+        backtestLoadingSub: document.getElementById("backtestLoadingSub"),
+        backtestProgressBar: document.getElementById("backtestProgressBar"),
+        backtestProgressLabel: document.getElementById("backtestProgressLabel"),
+        backtestProgressPct: document.getElementById("backtestProgressPct"),
+        backtestErrors: document.getElementById("backtestErrors"),
+      };
+
+      const ROLE_LABELS = {
+        admin: "Administrador",
+        visualizador: "Visualizador",
+      };
+      let currentUserRole = null;
+      let currentUserId = null;
+
+      function toggleLogin(loggedIn) {
+        els.loginOverlay.style.display = loggedIn ? "none" : "flex";
+        if (!loggedIn)
+          setTimeout(() => els.emailInput && els.emailInput.focus(), 100);
+      }
+
+      function showLoginError(msg) {
+        els.loginError.textContent = msg || "Credenciais inválidas";
+        els.loginError.style.display = "block";
+      }
+
+      function applySession(session) {
+        const meta = session.user.user_metadata || {};
+        const name = meta.full_name || session.user.email || "Usuário";
+        const initials = name
+          .split(" ")
+          .map((w) => w[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2);
+        currentUserRole = meta.role || "visualizador";
+        currentUserId = session.user.id;
+        els.userAvatar.textContent = initials;
+        els.userName.textContent = name;
+        els.userRole.textContent =
+          ROLE_LABELS[currentUserRole] || currentUserRole;
+        applyRoleUI();
+      }
+
+      function applyRoleUI() {
+        const isAdmin = currentUserRole === "admin";
+        els.predictBtn.style.display = isAdmin ? "" : "none";
+        els.usersNavBtn.style.display = isAdmin ? "" : "none";
+        els.emptyPredictBtn.style.display = isAdmin ? "" : "none";
+        const histBtn = document.getElementById("historyUploadBtn");
+        if (histBtn) histBtn.style.display = isAdmin ? "" : "none";
+        if (els.uploadCard)
+          els.uploadCard.style.display = isAdmin ? "" : "none";
+      }
+
+      async function handleSession(session) {
+        if (!session) {
+          toggleLogin(false);
+          return;
+        }
+        console.log("Session OK:", session.user.email);
+        applySession(session);
+        toggleLogin(true);
+        showPage("forecast");
+        appStarted = false;
+        startApp();
+      }
+
+      async function checkAuth() {
+        const {
+          data: { session },
+        } = await supabaseClient.auth.getSession();
+        await handleSession(session);
+      }
+
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (event === "SIGNED_OUT") {
+          toggleLogin(false);
+        }
+      });
+
+      els.loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = els.emailInput.value.trim();
+        const password = els.passwordInput.value;
+        els.loginError.style.display = "none";
+        els.loginBtn.disabled = true;
+        els.loginBtn.textContent = "Entrando...";
+        try {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({
+            email,
+            password,
+          });
+          if (error) {
+            console.error("Login error:", error);
+            showLoginError(error.message || "E-mail ou senha incorretos.");
+            return;
+          }
+          await handleSession(data.session);
+        } catch (err) {
+          console.error("Login exception:", err);
+          showLoginError("Erro ao conectar. Tente novamente.");
+        } finally {
+          els.loginBtn.disabled = false;
+          els.loginBtn.textContent = "Entrar";
+        }
+      });
+
+      els.logoutBtn.addEventListener("click", async () => {
+        await supabaseClient.auth.signOut();
+        toggleLogin(false);
+        els.emailInput.value = "";
+        els.passwordInput.value = "";
+        appStarted = false;
+      });
+
+      // ============================================
+      // THEME
+      // ============================================
+      function initTheme() {
+        const saved = storage.get("theme") || "light";
+        document.documentElement.setAttribute("data-theme", saved);
+        updateThemeIcon(saved);
+      }
+      function toggleTheme() {
+        const cur = document.documentElement.getAttribute("data-theme");
+        const next = cur === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        storage.set("theme", next);
+        updateThemeIcon(next);
+      }
+      function updateThemeIcon(theme) {
+        els.themeToggleBtn.innerHTML =
+          theme === "dark"
+            ? '<i data-lucide="sun" style="width:14px;height:14px"></i><span>Light</span>'
+            : '<i data-lucide="moon" style="width:14px;height:14px"></i><span>Dark</span>';
+        lucide.createIcons();
+      }
+      els.themeToggleBtn.addEventListener("click", toggleTheme);
+      initTheme();
+
+      // ============================================
+      // TABLE LOGIC
+      // ============================================
+      let allData = [];
+      let filteredData = [];
+      let currentPage = 1;
+      let appStarted = false;
+
+      function getMonthColumns(data) {
+        if (!data || !data.length) return [];
+        // Apenas chaves no formato YYYY-MM são colunas de mês.
+        const monthRe = /^\d{4}-\d{2}$/;
+        const cols = Object.keys(data[0]).filter((k) => monthRe.test(k));
+        // Garante ordem cronológica e no máximo 3 colunas (mês atual + 2).
+        cols.sort();
+        return cols.slice(0, 3);
+      }
+
+      function formatMonth(key) {
+        const [y, m] = key.split("-");
+        const months = [
+          "Jan",
+          "Fev",
+          "Mar",
+          "Abr",
+          "Mai",
+          "Jun",
+          "Jul",
+          "Ago",
+          "Set",
+          "Out",
+          "Nov",
+          "Dez",
+        ];
+        return months[parseInt(m) - 1] + " " + y;
+      }
+
+      function formatValue(val) {
+        if (val == null) return "\u2014";
+        return val.toLocaleString("pt-BR", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        });
+      }
+
+      function renderTable() {
+        const cols = getMonthColumns(allData);
+        if (!cols.length) return;
+
+        const now = new Date();
+        const currentKey =
+          now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+
+        const headers = [
+          document.getElementById("colMonth1"),
+          document.getElementById("colMonth2"),
+          document.getElementById("colMonth3"),
+        ];
+        headers.forEach((th, i) => {
+          if (!th) return;
+          th.textContent = cols[i] ? formatMonth(cols[i]) : "";
+          th.classList.toggle("col-current", cols[i] === currentKey);
+        });
+
+        const perPage = parseInt(els.rowsPerPage.value);
+        const totalPages = Math.ceil(filteredData.length / perPage);
+        if (currentPage > totalPages) currentPage = totalPages || 1;
+
+        const start = (currentPage - 1) * perPage;
+        const pageData = filteredData.slice(start, start + perPage);
+
+        els.tableBody.innerHTML = "";
+        pageData.forEach((row) => {
+          const tr = document.createElement("tr");
+          let descBadge = "";
+          const fmt = (row.Formato || "").toLowerCase();
+          if (fmt === "comprados")
+            descBadge =
+              ' <span class="formato-badge comprados" title="Lead time alto — média móvel simples">Comprados</span>';
+          else if (fmt === "sgb")
+            descBadge =
+              ' <span class="formato-badge sgb" title="Private Label — previsão externa históricamente imprecisa">SGB</span>';
+          if (row.insufficientHistory)
+            descBadge +=
+              ' <span class="formato-badge warn" title="Histórico insuficiente: faltam ' +
+              (row.monthsMissingForMin || 0) +
+              ' mês(es) para a previsão">hist. insuf.</span>';
+
+          tr.innerHTML =
+            '<td><span class="sku-code">' + row.SKU + "</span></td>";
+          tr.innerHTML +=
+            '<td><span class="product-desc" title="' +
+            row["Descrição"] +
+            '">' +
+            row["Descrição"] +
+            "</span>" +
+            descBadge +
+            "</td>";
+          cols.forEach((col) => {
+            const val = row[col];
+            const det = row.detalhes && row.detalhes[col];
+            if (row.insufficientHistory) {
+              tr.innerHTML +=
+                '<td class="numeric"><span class="insufficient">sem dados</span></td>';
+            } else {
+              const tol =
+                det && det.tolerancePct
+                  ? ' <span class="tol">±' +
+                    det.tolerancePct.toString().replace(".", ",") +
+                    "%</span>"
+                  : "";
+              tr.innerHTML +=
+                '<td class="numeric">' + formatValue(val) + tol + "</td>";
+            }
+          });
+          els.tableBody.appendChild(tr);
+        });
+
+        const endIdx = Math.min(start + perPage, filteredData.length);
+        els.footerInfo.textContent =
+          "Mostrando " +
+          (filteredData.length > 0 ? start + 1 : 0) +
+          " a " +
+          endIdx +
+          " de " +
+          filteredData.length +
+          " SKUs";
+        els.totalSkuCount.textContent = allData.length;
+        renderPagination(totalPages);
+        const dlBtn = document.getElementById("downloadExcelBtn");
+        if (dlBtn) dlBtn.disabled = !allData.length;
+      }
+
+      function downloadForecastExcel() {
+        if (!allData.length) return;
+        if (typeof XLSX === "undefined") {
+          alert("Biblioteca de exportação não carregou. Verifique sua conexão e recarregue a página.");
+          return;
+        }
+        const cols = getMonthColumns(allData);
+        const headerLabels = ["SKU", "Descrição", "Formato"].concat(
+          cols.map((c) => formatMonth(c))
+        );
+        const aoa = [headerLabels];
+        for (const row of allData) {
+          const line = [
+            row.SKU || "",
+            row["Descrição"] || "",
+            row.Formato || "",
+          ];
+          for (const c of cols) {
+            const v = row[c];
+            line.push(
+              row.insufficientHistory
+                ? "sem dados"
+                : v == null
+                ? ""
+                : Math.round(Number(v))
+            );
+          }
+          aoa.push(line);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws["!cols"] = [
+          { wch: 12 },
+          { wch: 50 },
+          { wch: 12 },
+          { wch: 12 },
+          { wch: 12 },
+          { wch: 12 },
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Previsão");
+        const d = new Date();
+        const stamp =
+          d.getFullYear() +
+          "-" +
+          String(d.getMonth() + 1).padStart(2, "0") +
+          "-" +
+          String(d.getDate()).padStart(2, "0");
+        XLSX.writeFile(wb, "previsao-" + stamp + ".xlsx");
+      }
+
+      function renderPagination(totalPages) {
+        els.pagination.innerHTML = "";
+        const prev = document.createElement("button");
+        prev.className = "page-btn";
+        prev.innerHTML = '<span class="material-icons">chevron_left</span>';
+        prev.disabled = currentPage <= 1;
+        prev.addEventListener("click", () => {
+          currentPage--;
+          renderTable();
+        });
+        els.pagination.appendChild(prev);
+
+        const maxV = 5;
+        let sp = Math.max(1, currentPage - Math.floor(maxV / 2));
+        let ep = Math.min(totalPages, sp + maxV - 1);
+        if (ep - sp < maxV - 1) sp = Math.max(1, ep - maxV + 1);
+
+        for (let i = sp; i <= ep; i++) {
+          const b = document.createElement("button");
+          b.className = "page-btn" + (i === currentPage ? " active" : "");
+          b.textContent = i;
+          b.addEventListener("click", () => {
+            currentPage = i;
+            renderTable();
+          });
+          els.pagination.appendChild(b);
+        }
+        if (ep < totalPages) {
+          const d = document.createElement("span");
+          d.textContent = "...";
+          d.style.padding = "0 6px";
+          d.style.color = "var(--text-secondary)";
+          els.pagination.appendChild(d);
+        }
+        const next = document.createElement("button");
+        next.className = "page-btn";
+        next.innerHTML = '<span class="material-icons">chevron_right</span>';
+        next.disabled = currentPage >= totalPages;
+        next.addEventListener("click", () => {
+          currentPage++;
+          renderTable();
+        });
+        els.pagination.appendChild(next);
+      }
+
+      els.searchInput.addEventListener("input", () => {
+        const q = els.searchInput.value.toLowerCase().trim();
+        filteredData = q
+          ? allData.filter(
+              (r) =>
+                String(r.SKU).includes(q) ||
+                r["Descrição"].toLowerCase().includes(q),
+            )
+          : [...allData];
+        currentPage = 1;
+        renderTable();
+      });
+
+      els.rowsPerPage.addEventListener("change", () => {
+        currentPage = 1;
+        renderTable();
+      });
+
+      // ============================================
+      // SIDEBAR TOGGLE
+      // ============================================
+      const mainGrid = document.getElementById("mainGrid");
+      document
+        .getElementById("toggleSidebarBtn")
+        .addEventListener("click", () => {
+          mainGrid.classList.toggle("sidebar-closed");
+          lucide.createIcons();
+        });
+      document
+        .getElementById("sidebarBackdrop")
+        .addEventListener("click", () => {
+          mainGrid.classList.add("sidebar-closed");
+        });
+      function checkMobile() {
+        if (window.innerWidth <= 768) mainGrid.classList.add("sidebar-closed");
+        else mainGrid.classList.remove("sidebar-closed");
+      }
+      checkMobile();
+      window.addEventListener("resize", checkMobile);
+
+      // ============================================
+      // API
+      // ============================================
+      async function fetchPredictions() {
+        const response = await fetch(API_GET_PREDICTIONS);
+        if (!response.ok)
+          throw new Error("Erro ao buscar previsões: " + response.status);
+        const text = await response.text();
+        if (!text) return [];
+        return JSON.parse(text);
+      }
+
+      // Tamanho do lote padrão (sobrepujado pela resposta de "start" do n8n).
+      const PREDICT_DEFAULT_CHUNK = 30;
+      // Pequeno respiro entre chunks para não saturar o task-runner.
+      const PREDICT_INTER_CHUNK_DELAY_MS = 250;
+
+      async function predictPhase(body, attempt) {
+        const r = await fetch(API_POST_PREDICT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+        const text = await r.text();
+        if (!r.ok) {
+          // Retry transitório em 502/522/524 (timeouts da borda).
+          if ((r.status === 524 || r.status === 522 || r.status === 502) && (attempt || 0) < 1) {
+            await new Promise((res) => setTimeout(res, 4000));
+            return predictPhase(body, (attempt || 0) + 1);
+          }
+          throw new Error(
+            "HTTP " + r.status + (text ? " — " + text.slice(0, 200) : "")
+          );
+        }
+        if (!text || !text.trim()) return null;
+        try { return JSON.parse(text); } catch (e) { return text; }
+      }
+
+      // ---- Persistência de progresso da previsão (resumível após reload) ----
+      // O servidor mantém `predict-source` e `predict-aggregate` no Redis
+      // (TTL ~1h), então basta o front lembrar de onde parou para continuar
+      // chamando `phase=chunk` sem refazer `phase=start` (que resetaria o
+      // agregado).
+      const PREDICT_PROGRESS_KEY = "ut_predict_progress_v1";
+      function _pdSaveProgress(s) {
+        try { localStorage.setItem(PREDICT_PROGRESS_KEY, JSON.stringify(s)); } catch (e) {}
+      }
+      function _pdLoadProgress() {
+        try { const r = localStorage.getItem(PREDICT_PROGRESS_KEY); return r ? JSON.parse(r) : null; } catch (e) { return null; }
+      }
+      function _pdClearProgress() {
+        try { localStorage.removeItem(PREDICT_PROGRESS_KEY); } catch (e) {}
+      }
+      let predictIsRunning = false;
+
+      // Orquestra start → chunks → finalize.
+      // onProgress: ({ phase, totalSkus, processedSkus, processedTotal, chunkSize }) => void
+      // Se `resumeState` for fornecido, pula `start` e continua dos `offset/processedTotal`.
+      async function requestNewPrediction(onProgress, resumeState) {
+        predictIsRunning = true;
+        try {
+          let totalSkus, chunkSize, offset, processedTotal;
+          if (resumeState && typeof resumeState.offset === "number") {
+            totalSkus = resumeState.totalSkus || 0;
+            chunkSize = resumeState.chunkSize || PREDICT_DEFAULT_CHUNK;
+            offset = resumeState.offset;
+            processedTotal = resumeState.processedTotal || 0;
+            if (onProgress) onProgress({ phase: "chunk", totalSkus, chunkSize, processedTotal, processedSkus: 0 });
+          } else {
+            const startRes = await predictPhase({ phase: "start" });
+            totalSkus = (startRes && startRes.totalSkus) || 0;
+            chunkSize = (startRes && startRes.chunkSize) || PREDICT_DEFAULT_CHUNK;
+            offset = 0;
+            processedTotal = 0;
+            if (onProgress) onProgress({ phase: "start", totalSkus, chunkSize, processedTotal: 0 });
+          }
+          _pdSaveProgress({ totalSkus, chunkSize, offset, processedTotal, startedAt: (resumeState && resumeState.startedAt) || Date.now() });
+
+          // Salvaguarda contra loop infinito (no máximo 200 chunks → 6000 SKUs).
+          for (let i = 0; i < 200; i++) {
+            const chunkRes = await predictPhase({
+              phase: "chunk",
+              skuOffset: offset,
+              skuLimit: chunkSize,
+            });
+            if (!chunkRes) throw new Error("Resposta vazia em phase=chunk.");
+            processedTotal = chunkRes.aggregatedTotal != null
+              ? chunkRes.aggregatedTotal
+              : processedTotal + (chunkRes.processedSkus || 0);
+            offset = chunkRes.nextOffset != null ? chunkRes.nextOffset : (offset + chunkSize);
+            if (chunkRes.totalSkus) totalSkus = chunkRes.totalSkus;
+            _pdSaveProgress({ totalSkus, chunkSize, offset, processedTotal, startedAt: Date.now() });
+            if (onProgress) {
+              onProgress({
+                phase: "chunk",
+                totalSkus,
+                processedSkus: chunkRes.processedSkus || 0,
+                processedTotal,
+                chunkSize,
+              });
+            }
+            if (!chunkRes.hasMore) break;
+            if (PREDICT_INTER_CHUNK_DELAY_MS > 0) {
+              await new Promise((r) => setTimeout(r, PREDICT_INTER_CHUNK_DELAY_MS));
+            }
+          }
+
+          const finalRes = await predictPhase({ phase: "finalize" });
+          _pdClearProgress();
+          if (onProgress) onProgress({ phase: "finalize", totalSkus, processedTotal, chunkSize });
+          return finalRes;
+        } finally {
+          predictIsRunning = false;
+        }
+      }
+
+      function updateLastPredictedDate(isoString) {
+        if (!isoString) {
+          els.lastPredictedDate.textContent = "\u2014";
+          return;
+        }
+        const date = new Date(isoString);
+        els.lastPredictedDate.textContent = date.toLocaleDateString("pt-BR");
+      }
+
+      function renderHistoryAlert(validation) {
+        const el = els.historyAlert;
+        if (!el) return;
+        if (!validation) {
+          el.style.display = "none";
+          return;
+        }
+        if (validation.lastHistoryMonth) {
+          els.lastHistoryMonth.textContent = formatMonth(
+            validation.lastHistoryMonth,
+          );
+        } else {
+          els.lastHistoryMonth.textContent = "\u2014";
+        }
+        if (validation.missingPreviousMonth) {
+          const list = (validation.missingMonths || [])
+            .map((m) => "<code>" + formatMonth(m) + "</code>")
+            .join(", ");
+          el.className = "history-alert";
+          el.innerHTML =
+            '<span class="material-icons alert-icon">error</span>' +
+            '<div><div class="alert-title">Histórico incompleto para o mês atual</div>' +
+            '<div class="alert-body">A previsão do <strong>mês atual</strong> exige o mês anterior (<code>' +
+            formatMonth(validation.expectedPreviousMonth) +
+            "</code>) presente no histórico. " +
+            (list ? "Faltam: " + list + ". " : "") +
+            "Último mês presente: <strong>" +
+            formatMonth(validation.lastHistoryMonth || "") +
+            "</strong>. Atualize a planilha de histórico antes de continuar.</div></div>";
+          el.style.display = "flex";
+        } else {
+          el.style.display = "none";
+        }
+      }
+
+      async function loadAndRender(opts) {
+        const skipLoading = opts && opts.skipLoading;
+        if (!skipLoading) {
+          els.tableLoading.style.display = "flex";
+          els.dataTable.style.display = "none";
+          els.tableError.style.display = "none";
+          els.tableEmpty.style.display = "none";
+        }
+        try {
+          const response = await fetchPredictions();
+          const wrapper = Array.isArray(response) ? response[0] : response;
+          const createdAt = wrapper && wrapper.createdAt;
+          const validation = wrapper && wrapper.validation;
+          allData = wrapper && Array.isArray(wrapper.data) ? wrapper.data : [];
+          renderHistoryAlert(validation);
+          if (!allData.length) {
+            filteredData = [];
+            els.tableLoading.style.display = "none";
+            els.tableEmpty.style.display = "flex";
+            els.lastPredictedDate.textContent = "\u2014";
+            return false;
+          }
+          filteredData = [...allData];
+          updateLastPredictedDate(createdAt);
+          els.tableLoading.style.display = "none";
+          els.dataTable.style.display = "table";
+          currentPage = 1;
+          renderTable();
+          return true;
+        } catch (e) {
+          console.error("Erro ao carregar dados:", e);
+          allData = [];
+          filteredData = [];
+          els.tableLoading.style.display = "none";
+          els.dataTable.style.display = "none";
+          els.tableError.style.display = "flex";
+          els.tableErrorDetail.textContent =
+            e.message || "Verifique sua conexão e tente novamente.";
+          els.lastPredictedDate.textContent = "\u2014";
+          return false;
+        }
+      }
+
+      // Polls GetPredict until data appears (or attempts run out).
+      async function loadAndRenderWithRetry(maxAttempts, intervalMs) {
+        const ok = await loadAndRender();
+        if (ok) return true;
+        for (let i = 1; i < (maxAttempts || 4); i++) {
+          await new Promise((res) => setTimeout(res, intervalMs || 2500));
+          const ok2 = await loadAndRender({ skipLoading: true });
+          if (ok2) return true;
+        }
+        return false;
+      }
+
+      // Atualiza o overlay de carregamento da página de previsões (estilo backtest).
+      function setForecastLoading(state) {
+        if (!state) {
+          if (els.tableLoadingTitle) els.tableLoadingTitle.textContent = "Carregando previsões...";
+          if (els.tableLoadingText) els.tableLoadingText.textContent = "Buscando dados em cache";
+          if (els.tableLoadingBar) els.tableLoadingBar.style.width = "0%";
+          if (els.tableLoadingLabel) els.tableLoadingLabel.textContent = "—";
+          if (els.tableLoadingPct) els.tableLoadingPct.textContent = "—";
+          return;
+        }
+        const { phase, totalSkus, processedTotal } = state;
+        const total = totalSkus || 0;
+        const done = processedTotal || 0;
+        let pct = 0;
+        if (phase === "finalize") pct = 100;
+        else if (phase === "chunk" && total > 0) pct = Math.min(99, Math.round((done / total) * 100));
+        else if (phase === "start") pct = 2;
+        else if (phase === "loading") pct = 100;
+        if (els.tableLoadingTitle) {
+          els.tableLoadingTitle.textContent =
+            phase === "finalize" ? "Finalizando previsão..."
+            : phase === "loading" ? "Carregando resultados..."
+            : "Realizando previsão...";
+        }
+        if (els.tableLoadingText) {
+          if (phase === "start") els.tableLoadingText.textContent = "Iniciando processamento";
+          else if (phase === "chunk") els.tableLoadingText.textContent = "Processando lotes de SKUs";
+          else if (phase === "finalize") els.tableLoadingText.textContent = "Consolidando resultados";
+          else if (phase === "loading") els.tableLoadingText.textContent = "Buscando dados em cache";
+        }
+        if (els.tableLoadingBar) els.tableLoadingBar.style.width = pct + "%";
+        if (els.tableLoadingLabel) {
+          els.tableLoadingLabel.textContent =
+            total > 0 ? done + " de " + total + " SKUs" : "—";
+        }
+        if (els.tableLoadingPct) els.tableLoadingPct.textContent = pct + "%";
+      }
+
+      // Empty-state predict button
+      els.emptyPredictBtn.addEventListener("click", async () => {
+        els.emptyPredictBtn.disabled = true;
+        els.emptyPredictBtn.querySelector(".material-icons").textContent =
+          "hourglass_empty";
+        const emptyLbl = els.emptyPredictBtn.querySelectorAll("span")[1];
+        emptyLbl.textContent = "Iniciando...";
+        // Mostra o overlay estilo backtest na área principal.
+        els.tableEmpty.style.display = "none";
+        els.dataTable.style.display = "none";
+        els.tableError.style.display = "none";
+        els.tableLoading.style.display = "flex";
+        setForecastLoading({ phase: "start", totalSkus: 0, processedTotal: 0 });
+        try {
+          await requestNewPrediction((p) => {
+            if (p.phase === "start") {
+              emptyLbl.textContent =
+                "Processando 0/" + (p.totalSkus || "?") + " SKUs...";
+            } else if (p.phase === "chunk") {
+              emptyLbl.textContent =
+                "Processando " + p.processedTotal + "/" +
+                (p.totalSkus || "?") + " SKUs...";
+            } else if (p.phase === "finalize") {
+              emptyLbl.textContent = "Finalizando...";
+            }
+            setForecastLoading(p);
+          });
+          setForecastLoading({ phase: "loading", totalSkus: 0, processedTotal: 0 });
+          await loadAndRenderWithRetry(5, 2500);
+        } catch (e) {
+          console.error("Erro ao realizar previsão:", e);
+          els.tableEmpty.style.display = "none";
+          els.tableError.style.display = "flex";
+          els.tableErrorDetail.textContent =
+            e.message || "Verifique sua conexão e tente novamente.";
+        } finally {
+          setForecastLoading(null);
+          els.emptyPredictBtn.disabled = false;
+          els.emptyPredictBtn.querySelector(".material-icons").textContent =
+            "auto_awesome";
+          els.emptyPredictBtn.querySelectorAll("span")[1].textContent =
+            "Realizar Previsão";
+        }
+      });
+
+      (function attachDownloadExcelHandler() {
+        const btn = document.getElementById("downloadExcelBtn");
+        if (btn) btn.addEventListener("click", downloadForecastExcel);
+      })();
+
+      // Predict button
+      els.predictBtn.addEventListener("click", async () => {
+        els.predictBtn.disabled = true;
+        const lbl = els.predictBtn.querySelector("span");
+        const originalLabel = lbl.textContent;
+        lbl.textContent = "Iniciando...";
+        // Garante que o usuário esteja na página de previsões para ver o progresso.
+        try { showPage("forecast"); } catch (e) { /* noop */ }
+        // Mostra estado de carregamento na área principal (mesmo UX do botão da página).
+        els.tableEmpty.style.display = "none";
+        els.dataTable.style.display = "none";
+        els.tableError.style.display = "none";
+        els.tableLoading.style.display = "flex";
+        setForecastLoading({ phase: "start", totalSkus: 0, processedTotal: 0 });
+        try {
+          await requestNewPrediction((p) => {
+            if (p.phase === "start") {
+              lbl.textContent =
+                "Processando 0/" + (p.totalSkus || "?");
+            } else if (p.phase === "chunk") {
+              lbl.textContent =
+                "Processando " + p.processedTotal + "/" +
+                (p.totalSkus || "?");
+            } else if (p.phase === "finalize") {
+              lbl.textContent = "Finalizando...";
+            }
+            setForecastLoading(p);
+          });
+          setForecastLoading({ phase: "loading", totalSkus: 0, processedTotal: 0 });
+          await loadAndRenderWithRetry(5, 2500);
+        } catch (e) {
+          console.error("Erro ao realizar previsão:", e);
+          els.tableLoading.style.display = "none";
+          els.dataTable.style.display = "none";
+          els.tableError.style.display = "flex";
+          els.tableErrorDetail.textContent =
+            e.message || "Verifique sua conexão e tente novamente.";
+        } finally {
+          setForecastLoading(null);
+          els.predictBtn.disabled = false;
+          lbl.textContent = originalLabel || "Realizar Previsão";
+          lucide.createIcons();
+        }
+      });
+
+      // Reutiliza o mesmo UX do botão de previsão para retomar um run interrompido.
+      async function resumePredictFlow(resumeState) {
+        try { showPage("forecast"); } catch (e) { /* noop */ }
+        els.predictBtn.disabled = true;
+        const lbl = els.predictBtn.querySelector("span");
+        const originalLabel = lbl.textContent;
+        lbl.textContent = "Retomando...";
+        els.tableEmpty.style.display = "none";
+        els.dataTable.style.display = "none";
+        els.tableError.style.display = "none";
+        els.tableLoading.style.display = "flex";
+        setForecastLoading({
+          phase: "chunk",
+          totalSkus: resumeState.totalSkus || 0,
+          processedTotal: resumeState.processedTotal || 0,
+        });
+        try {
+          await requestNewPrediction((p) => {
+            if (p.phase === "chunk") {
+              lbl.textContent = "Processando " + p.processedTotal + "/" + (p.totalSkus || "?");
+            } else if (p.phase === "finalize") {
+              lbl.textContent = "Finalizando...";
+            }
+            setForecastLoading(p);
+          }, resumeState);
+          setForecastLoading({ phase: "loading", totalSkus: 0, processedTotal: 0 });
+          await loadAndRenderWithRetry(5, 2500);
+        } catch (e) {
+          console.error("Erro ao retomar previsão:", e);
+          els.tableLoading.style.display = "none";
+          els.dataTable.style.display = "none";
+          els.tableError.style.display = "flex";
+          els.tableErrorDetail.textContent =
+            e.message || "Verifique sua conexão e tente novamente.";
+        } finally {
+          setForecastLoading(null);
+          els.predictBtn.disabled = false;
+          lbl.textContent = originalLabel || "Realizar Previsão";
+          lucide.createIcons();
+        }
+      }
+
+      // Aviso ao tentar fechar/recarregar enquanto a previsão está processando.
+      window.addEventListener("beforeunload", (e) => {
+        if (predictIsRunning) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      });
+
+      // Detecta previsão interrompida e oferece retomar automaticamente.
+      // O servidor mantém o agregado em Redis (TTL ~1h), então retomar é seguro.
+      (function checkInterruptedPredict() {
+        const prog = _pdLoadProgress();
+        if (!prog || typeof prog.offset !== "number") return;
+        // Se startedAt for muito antigo (>1h), o cache Redis pode ter expirado;
+        // ainda assim tentamos retomar — se falhar, o usuário pode reiniciar.
+        const total = prog.totalSkus || 0;
+        const done = prog.processedTotal || 0;
+        const banner = document.createElement("div");
+        banner.style.cssText =
+          "position:fixed;left:50%;bottom:20px;transform:translateX(-50%);" +
+          "background:#fff8e1;border:1px solid #f59e0b;color:#78350f;" +
+          "padding:10px 14px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);" +
+          "z-index:9999;display:flex;align-items:center;gap:10px;flex-wrap:wrap;" +
+          "font-size:13px;max-width:90vw;";
+        banner.innerHTML =
+          '<span>Previsão interrompida — ' + done + (total ? '/' + total : '') +
+          ' SKUs processados.</span>' +
+          '<button id="pdResumeBtn" style="padding:5px 12px;border:none;border-radius:6px;background:#f59e0b;color:#fff;font-weight:600;cursor:pointer;">Retomar</button>' +
+          '<button id="pdDiscardBtn" style="padding:5px 12px;border:none;border-radius:6px;background:#e5e7eb;color:#374151;cursor:pointer;">Descartar</button>';
+        document.body.appendChild(banner);
+        document.getElementById("pdResumeBtn").addEventListener("click", () => {
+          banner.remove();
+          resumePredictFlow(prog);
+        });
+        document.getElementById("pdDiscardBtn").addEventListener("click", () => {
+          _pdClearProgress();
+          banner.remove();
+        });
+      })();
+
+      // ============================================
+      // PAGE NAVIGATION
+      // ============================================
+      const forecastSection = document.getElementById("forecastSection");
+      const usersSection = document.getElementById("usersSection");
+      const testesSection = document.getElementById("testesSection");
+
+      function showPage(page) {
+        document.querySelectorAll(".nav-item").forEach((btn) => {
+          if (btn.id === "predictBtn") return;
+          btn.classList.toggle("active", btn.dataset.page === page);
+        });
+        forecastSection.style.display = page === "forecast" ? "" : "none";
+        usersSection.classList.toggle("active", page === "users");
+        testesSection.classList.toggle("active", page === "testes");
+        if (page === "users") loadUsers();
+        if (page === "testes") openBacktestPage();
+      }
+
+      document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
+        if (btn.id === "predictBtn") return;
+        btn.addEventListener("click", () => showPage(btn.dataset.page));
+      });
+
+      // History upload modal (sidebar trigger)
+      const historyUploadModal = document.getElementById("historyUploadModal");
+      const historyUploadBtn = document.getElementById("historyUploadBtn");
+      const historyUploadCloseBtn = document.getElementById("historyUploadCloseBtn");
+      if (historyUploadBtn) {
+        historyUploadBtn.addEventListener("click", () => {
+          if (historyUploadModal) historyUploadModal.classList.add("active");
+        });
+      }
+      if (historyUploadCloseBtn) {
+        historyUploadCloseBtn.addEventListener("click", () => {
+          historyUploadModal.classList.remove("active");
+        });
+      }
+      if (historyUploadModal) {
+        historyUploadModal.addEventListener("click", (e) => {
+          if (e.target === historyUploadModal)
+            historyUploadModal.classList.remove("active");
+        });
+      }
+
+      // ============================================
+      // USER MANAGEMENT
+      // ============================================
+      const userModal = document.getElementById("userModal");
+      const userModalForm = document.getElementById("userModalForm");
+      const deleteModal = document.getElementById("deleteModal");
+      let editingUserId = null;
+      let deletingUserId = null;
+
+      function escapeHtml(str) {
+        const d = document.createElement("div");
+        d.textContent = str;
+        return d.innerHTML;
+      }
+
+      async function loadUsers() {
+        const usersLoading = document.getElementById("usersLoading");
+        const usersTable = document.getElementById("usersTable");
+        usersLoading.style.display = "flex";
+        usersTable.style.display = "none";
+        try {
+          const { data, error } = await supabaseClient.rpc(
+            "universo_t_admin_list_users",
+          );
+          if (error) throw error;
+          document.getElementById("usersCount").textContent = data.length;
+          const tbody = document.getElementById("usersTableBody");
+          tbody.innerHTML = "";
+          data.forEach((u) => {
+            const tr = document.createElement("tr");
+            const created = new Date(u.created_at).toLocaleDateString("pt-BR");
+            const roleClass = u.role || "visualizador";
+            const roleLabel = ROLE_LABELS[u.role] || u.role;
+
+            tr.innerHTML =
+              "<td>" +
+              escapeHtml(u.full_name || "\u2014") +
+              "</td>" +
+              "<td>" +
+              escapeHtml(u.email) +
+              "</td>" +
+              '<td><span class="role-badge ' +
+              roleClass +
+              '">' +
+              roleLabel +
+              "</span></td>" +
+              "<td>" +
+              created +
+              "</td>" +
+              '<td style="display:flex;gap:6px">' +
+              '<button class="action-btn edit-user-btn" title="Editar"><span class="material-icons" style="font-size:16px">edit</span></button>' +
+              (u.user_id === currentUserId
+                ? ""
+                : '<button class="action-btn danger delete-user-btn" title="Excluir"><span class="material-icons" style="font-size:16px">delete</span></button>') +
+              "</td>";
+            tr.querySelector(".edit-user-btn").addEventListener("click", () =>
+              openEditUser(u),
+            );
+            const delBtn = tr.querySelector(".delete-user-btn");
+            if (delBtn) {
+              delBtn.addEventListener("click", () => openDeleteUser(u));
+            }
+            tbody.appendChild(tr);
+          });
+          usersLoading.style.display = "none";
+          usersTable.style.display = "table";
+        } catch (err) {
+          console.error("Erro ao carregar usuários:", err);
+          usersLoading.style.display = "none";
+        }
+      }
+
+      // CREATE
+      document.getElementById("addUserBtn").addEventListener("click", () => {
+        editingUserId = null;
+        document.getElementById("userModalTitle").textContent = "Novo Usuário";
+        document.getElementById("emailField").style.display = "";
+        document.getElementById("passwordField").style.display = "";
+        document.getElementById("roleField").style.display = "";
+        document.getElementById("modalPassword").required = true;
+        userModalForm.reset();
+        document.getElementById("modalRole").disabled = false;
+        document.getElementById("modalRole").title = "";
+        document.getElementById("modalError").style.display = "none";
+        userModal.classList.add("active");
+      });
+      // EDIT
+      function openEditUser(user) {
+        editingUserId = user.user_id;
+        document.getElementById("userModalTitle").textContent =
+          "Editar Usuário";
+        document.getElementById("emailField").style.display = "none";
+        document.getElementById("passwordField").style.display = "none";
+        document.getElementById("roleField").style.display = "";
+        document.getElementById("modalPassword").required = false;
+        document.getElementById("modalFullName").value = user.full_name || "";
+        document.getElementById("modalRole").value =
+          user.role || "visualizador";
+        const isSelf = user.user_id === currentUserId;
+        document.getElementById("modalRole").disabled = isSelf;
+        document.getElementById("modalRole").title = isSelf
+          ? "Você não pode alterar o seu próprio cargo."
+          : "";
+        document.getElementById("modalError").style.display = "none";
+        userModal.classList.add("active");
+      }
+
+      // MODAL CANCEL
+      document
+        .getElementById("modalCancelBtn")
+        .addEventListener("click", () => {
+          userModal.classList.remove("active");
+        });
+
+      // MODAL SAVE
+      userModalForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const saveBtn = document.getElementById("modalSaveBtn");
+        const errorEl = document.getElementById("modalError");
+        errorEl.style.display = "none";
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Salvando...";
+        try {
+          if (editingUserId) {
+            const isSelf = editingUserId === currentUserId;
+            const payload = {
+              p_user_id: editingUserId,
+              p_full_name: document
+                .getElementById("modalFullName")
+                .value.trim(),
+            };
+            if (!isSelf) {
+              payload.p_role = document.getElementById("modalRole").value;
+            }
+            const { error } = await supabaseClient.rpc(
+              "universo_t_admin_update_user",
+              payload,
+            );
+            if (error) throw error;
+          } else {
+            const email = document.getElementById("modalEmail").value.trim();
+            const password = document.getElementById("modalPassword").value;
+            const fullName = document
+              .getElementById("modalFullName")
+              .value.trim();
+            const role = document.getElementById("modalRole").value;
+            const { data: signupData, error: signupError } =
+              await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: {
+                  data: {
+                    full_name: fullName,
+                    role: role,
+                    company_name: "universo_tintas",
+                  },
+                },
+              });
+            if (signupError) throw signupError;
+            if (signupData.user) {
+              const { error: confirmError } = await supabaseClient.rpc(
+                "universo_t_admin_confirm_user",
+                { p_user_id: signupData.user.id },
+              );
+              if (confirmError)
+                console.error("Erro ao confirmar e-mail:", confirmError);
+            }
+          }
+          userModal.classList.remove("active");
+          await loadUsers();
+        } catch (err) {
+          errorEl.textContent = err.message || "Erro ao salvar usuário.";
+          errorEl.style.display = "block";
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Salvar";
+        }
+      });
+
+      // DELETE
+      function openDeleteUser(user) {
+        if (user.user_id === currentUserId) {
+          alert("Você não pode excluir o seu próprio usuário.");
+          return;
+        }
+        deletingUserId = user.user_id;
+        document.getElementById("deleteUserName").textContent =
+          user.full_name || user.email;
+        document.getElementById("deleteModalError").style.display = "none";
+        deleteModal.classList.add("active");
+      }
+
+      document
+        .getElementById("deleteCancelBtn")
+        .addEventListener("click", () => {
+          deleteModal.classList.remove("active");
+        });
+
+      document
+        .getElementById("deleteConfirmBtn")
+        .addEventListener("click", async () => {
+          const confirmBtn = document.getElementById("deleteConfirmBtn");
+          const errorEl = document.getElementById("deleteModalError");
+          errorEl.style.display = "none";
+          confirmBtn.disabled = true;
+          confirmBtn.textContent = "Excluindo...";
+          try {
+            const { error } = await supabaseClient.rpc(
+              "universo_t_admin_delete_user",
+              {
+                p_user_id: deletingUserId,
+              },
+            );
+            if (error) throw error;
+            deleteModal.classList.remove("active");
+            await loadUsers();
+          } catch (err) {
+            errorEl.textContent = err.message || "Erro ao excluir usuário.";
+            errorEl.style.display = "block";
+          } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = "Excluir";
+          }
+        });
+
+      // ============================================
+      // HISTORY UPLOAD (drag & drop)
+      // ============================================
+      function setDropStatus(msg, kind) {
+        if (!els.dropStatus) return;
+        els.dropStatus.textContent = msg || "";
+        els.dropStatus.className = "drop-status" + (kind ? " " + kind : "");
+      }
+
+      // ----- persistent upload state -----
+      const HISTORY_STATE_KEY = "ut_history_state_v1";
+      let uploading = false;
+
+      function setUploadingUI(isOn) {
+        uploading = isOn;
+        if (!els.dropZone) return;
+        els.dropZone.classList.toggle("uploading", isOn);
+        if (els.chooseFileBtn) els.chooseFileBtn.disabled = isOn;
+        if (els.fileInput) els.fileInput.disabled = isOn;
+        if (els.predictBtn) els.predictBtn.disabled = isOn;
+      }
+
+      function loadHistoryState() {
+        try {
+          const raw = localStorage.getItem(HISTORY_STATE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+      }
+      function saveHistoryState(state) {
+        try { localStorage.setItem(HISTORY_STATE_KEY, JSON.stringify(state)); } catch (e) {}
+      }
+      function renderHistoryStateChip() {
+        const s = loadHistoryState();
+        if (!s || !els.dropStatus) return;
+        const when = s.uploadedAt ? new Date(s.uploadedAt).toLocaleString("pt-BR") : "";
+        setDropStatus(
+          "Último upload: " + s.fileName + (when ? " (" + when + ")" : ""),
+          "ok",
+        );
+      }
+
+      async function uploadHistoryFile(file) {
+        if (!file) return;
+        if (uploading) return;
+        if (!/\.xlsx?$/i.test(file.name)) {
+          setDropStatus("Apenas arquivos .xlsx são suportados.", "err");
+          return;
+        }
+        setUploadingUI(true);
+        setDropStatus("Enviando " + file.name + "...", "");
+        const fd = new FormData();
+        fd.append("data", file, file.name);
+        try {
+          const r = await fetch(API_REPLACE_HISTORY, { method: "POST", body: fd });
+          const body = await r.text();
+          if (!r.ok) throw new Error("HTTP " + r.status + (body ? ": " + body.slice(0, 200) : ""));
+          saveHistoryState({ fileName: file.name, uploadedAt: new Date().toISOString() });
+          setDropStatus(
+            "Histórico " + file.name + " carregado. Clique em 'Realizar Previsão' para gerar a nova previsão.",
+            "ok",
+          );
+        } catch (err) {
+          console.error("Upload error:", err);
+          setDropStatus(err.message || "Falha no upload. Tente novamente.", "err");
+        } finally {
+          setUploadingUI(false);
+        }
+      }
+
+      if (els.dropZone) {
+        const dz = els.dropZone;
+        ["dragenter", "dragover"].forEach((ev) =>
+          dz.addEventListener(ev, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!uploading) dz.classList.add("dragover");
+          }),
+        );
+        ["dragleave", "drop"].forEach((ev) =>
+          dz.addEventListener(ev, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dz.classList.remove("dragover");
+          }),
+        );
+        dz.addEventListener("drop", (e) => {
+          if (uploading) return;
+          const file = e.dataTransfer && e.dataTransfer.files[0];
+          if (file) uploadHistoryFile(file);
+        });
+        els.chooseFileBtn.addEventListener("click", () => {
+          if (!uploading) els.fileInput.click();
+        });
+        els.fileInput.addEventListener("change", (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (file) uploadHistoryFile(file);
+          els.fileInput.value = "";
+        });
+        renderHistoryStateChip();
+      }
+
+      // ============================================
+      // BACKTEST PAGE
+      // ============================================
+      let backtestData = [];
+      let backtestSummary = [];
+
+      const backtestSelectedMonths = new Set();
+      let backtestMonthKeys = [];
+
+      function updateBacktestSelectedCount() {
+        const el = document.getElementById("backtestSelectedCount");
+        if (el) el.textContent = backtestSelectedMonths.size + " selecionados";
+      }
+
+      function renderBacktestMonthGrid() {
+        const grid = els.backtestMonths;
+        if (!grid) return;
+        grid.innerHTML = "";
+        backtestMonthKeys.forEach((k) => {
+          const lbl = document.createElement("label");
+          lbl.className = "month-chip" + (backtestSelectedMonths.has(k) ? " selected" : "");
+          lbl.dataset.key = k;
+          lbl.innerHTML =
+            '<input type="checkbox" value="' + k + '"' +
+            (backtestSelectedMonths.has(k) ? " checked" : "") +
+            '/><span>' + formatMonth(k) + '</span>';
+          lbl.querySelector("input").addEventListener("change", (ev) => {
+            if (ev.target.checked) backtestSelectedMonths.add(k);
+            else backtestSelectedMonths.delete(k);
+            lbl.classList.toggle("selected", ev.target.checked);
+            updateBacktestSelectedCount();
+          });
+          grid.appendChild(lbl);
+        });
+        updateBacktestSelectedCount();
+      }
+
+      async function openBacktestPage() {
+        if (!els.backtestMonths) return;
+        if (backtestMonthKeys.length > 0) {
+          renderBacktestMonthGrid();
+          return;
+        }
+        let lastKey = null;
+        try {
+          const resp = await fetchPredictions();
+          const wrap = Array.isArray(resp) ? resp[0] : resp;
+          if (wrap && wrap.validation && wrap.validation.lastHistoryMonth) {
+            lastKey = wrap.validation.lastHistoryMonth;
+          }
+        } catch (e) {}
+        if (!lastKey) {
+          const n = new Date();
+          let m = n.getMonth();
+          let y = n.getFullYear();
+          if (m === 0) { m = 12; y--; }
+          lastKey = y + "-" + String(m).padStart(2, "0");
+        }
+        const [ly, lm] = lastKey.split("-").map((v) => parseInt(v, 10));
+        let yy = ly;
+        let mm = lm;
+        backtestMonthKeys = [];
+        for (let i = 0; i < 24; i++) {
+          backtestMonthKeys.push(yy + "-" + String(mm).padStart(2, "0"));
+          mm--;
+          if (mm < 1) { mm = 12; yy--; }
+        }
+        renderBacktestMonthGrid();
+      }
+
+      function selectLastNBacktestMonths(n) {
+        backtestSelectedMonths.clear();
+        backtestMonthKeys.slice(0, n).forEach((k) => backtestSelectedMonths.add(k));
+        renderBacktestMonthGrid();
+      }
+
+      document.getElementById("btSelectLast3")
+        .addEventListener("click", () => selectLastNBacktestMonths(3));
+      document.getElementById("btSelectLast6")
+        .addEventListener("click", () => selectLastNBacktestMonths(6));
+      document.getElementById("btSelectClear")
+        .addEventListener("click", () => { backtestSelectedMonths.clear(); renderBacktestMonthGrid(); });
+
+      function classifyError(pct, tol) {
+        if (pct == null) return "";
+        if (pct <= (tol || 10)) return "good";
+        if (pct <= (tol || 10) * 2) return "warn";
+        return "bad";
+      }
+
+      function renderBacktest() {
+        const tbody = els.backtestTableBody;
+        const thead = els.backtestTableHead;
+        const q = (els.backtestSearch.value || "").toLowerCase().trim();
+        tbody.innerHTML = "";
+        thead.innerHTML = "";
+
+        if (!backtestData.length) {
+          els.backtestResultsCard.style.display = "none";
+          return;
+        }
+
+        // Meses únicos presentes (ordem cronológica crescente)
+        const monthSet = new Set();
+        backtestData.forEach((r) => monthSet.add(r.mes));
+        const months = Array.from(monthSet).sort();
+
+        // Agrupa por SKU
+        const bySku = new Map();
+        backtestData.forEach((r) => {
+          const k = String(r.SKU);
+          let entry = bySku.get(k);
+          if (!entry) {
+            entry = {
+              SKU: r.SKU,
+              Descricao: r["Descrição"] || "",
+              Formato: r.Formato || "",
+              tolerancePct: r.tolerancePct,
+              months: {},
+            };
+            bySku.set(k, entry);
+          }
+          entry.months[r.mes] = r;
+          // mantém último valor não-nulo de descrição/formato/tolerância
+          if (r["Descrição"]) entry.Descricao = r["Descrição"];
+          if (r.Formato) entry.Formato = r.Formato;
+          if (r.tolerancePct != null) entry.tolerancePct = r.tolerancePct;
+        });
+
+        let rows = Array.from(bySku.values());
+
+        // Filtro
+        if (q) {
+          rows = rows.filter(
+            (r) =>
+              String(r.SKU).toLowerCase().includes(q) ||
+              (r.Descricao || "").toLowerCase().includes(q),
+          );
+        }
+
+        // MAPE médio por SKU para ordenar piores → melhores
+        rows.forEach((r) => {
+          let sum = 0,
+            n = 0;
+          months.forEach((m) => {
+            const c = r.months[m];
+            if (c && c.errorPct != null) {
+              sum += c.errorPct;
+              n += 1;
+            }
+          });
+          r._avgErr = n ? sum / n : null;
+          r._withReal = n;
+        });
+        rows.sort((a, b) => {
+          if (a._avgErr == null && b._avgErr == null) return 0;
+          if (a._avgErr == null) return 1;
+          if (b._avgErr == null) return -1;
+          return b._avgErr - a._avgErr;
+        });
+
+        // Cabeçalho com 2 linhas: meses agrupados + sub-headers
+        const subCols = 3;
+        let topHead =
+          "<tr>" +
+          '<th rowspan="2">SKU</th>' +
+          '<th rowspan="2">Descrição</th>' +
+          '<th rowspan="2">Formato</th>' +
+          '<th rowspan="2">Tolerância</th>';
+        let subHead = "<tr>";
+        months.forEach((m) => {
+          topHead +=
+            '<th colspan="' + subCols + '" class="numeric month-group">' +
+            formatMonth(m) +
+            "</th>";
+          subHead +=
+            '<th class="numeric sub">Prev.</th>' +
+            '<th class="numeric sub">Real</th>' +
+            '<th class="numeric sub">Erro %</th>';
+        });
+        topHead += '<th rowspan="2" class="numeric">MAPE</th></tr>';
+        subHead += "</tr>";
+        thead.innerHTML = topHead + subHead;
+
+        // Linhas
+        const limit = 500;
+        const truncated = rows.length > limit;
+        rows.slice(0, limit).forEach((r) => {
+          const tr = document.createElement("tr");
+          let html =
+            '<td><span class="sku-code">' +
+            r.SKU +
+            "</span></td>" +
+            '<td><span class="product-desc" title="' +
+            (r.Descricao || "").replace(/"/g, "&quot;") +
+            '">' +
+            (r.Descricao || "") +
+            "</span></td>" +
+            "<td>" +
+            (r.Formato || "—") +
+            "</td>" +
+            "<td>±" +
+            (r.tolerancePct != null
+              ? r.tolerancePct.toString().replace(".", ",")
+              : "0") +
+            "%</td>";
+
+          months.forEach((m) => {
+            const c = r.months[m];
+            if (!c) {
+              for (let i = 0; i < subCols; i++) {
+                html += '<td class="numeric muted">—</td>';
+              }
+            } else {
+              const errCls = classifyError(c.errorPct, c.tolerancePct);
+              // Marcador único por célula (prioridade: regime > fence > cap > selector v1 > bias).
+              // Mantém o tooltip rico, mas evita poluição visual.
+              let adjBadge = "";
+              let adjKind = "";
+              if (c.damping) {
+                if (c.damping.regimeShift) {
+                  adjKind = c.damping.regimeShift.direction === "collapse" ? "regime-down" : "regime-up";
+                } else if (c.damping.fenceApplied || c.damping.hardCapApplied) {
+                  adjKind = "fence";
+                } else if (c.damping.capApplied || c.damping.wasCapped) {
+                  adjKind = "cap";
+                } else if (c.damping.selector && c.damping.selector !== "v2") {
+                  adjKind = "v1sel";
+                } else if (c.damping.biasFactor != null && c.damping.biasFactor !== 1) {
+                  adjKind = c.damping.biasFactor < 1 ? "bias-down" : "bias-up";
+                }
+                if (adjKind) adjBadge = ' <span class="adj-dot adj-' + adjKind + '"></span>';
+              }
+              const tooltip = c.damping
+                ? "wRecent: " + (c.damping.wRecent != null ? c.damping.wRecent.toFixed(2) : "0") +
+                  " · bias: " + (c.damping.biasFactor != null ? c.damping.biasFactor.toFixed(2) : "1.00") +
+                  " · overshoot hist: " + (c.damping.overshootRate != null ? (c.damping.overshootRate * 100).toFixed(0) + "%" : "—") +
+                  " · cap: " + (c.damping.capApplied ? "sim" : "não") +
+                  (c.damping.fenceApplied && c.damping.fenceInfo
+                    ? " · fence (" + c.damping.fenceInfo.direction + "): " +
+                      c.damping.fenceInfo.fence.toLocaleString("pt-BR") +
+                      (c.damping.fenceInfo.ratioCap != null ? " [ratio " + c.damping.fenceInfo.ratioCap.toLocaleString("pt-BR") + "]" : "") +
+                      (c.damping.fenceInfo.tukeyCap != null ? " [tukey " + c.damping.fenceInfo.tukeyCap.toLocaleString("pt-BR") + "]" : "") +
+                      " (recent " + (c.damping.fenceInfo.recentLevel != null ? c.damping.fenceInfo.recentLevel.toLocaleString("pt-BR") : "—") + ")"
+                    : "") +
+                  (c.damping.regimeShift
+                    ? " · regime " + c.damping.regimeShift.direction +
+                      " (ratio " + c.damping.regimeShift.currentRatio +
+                      " vs fence " + c.damping.regimeShift.fenceRatio +
+                      ", pull " + (c.damping.regimeShift.pullWeight * 100).toFixed(0) + "%)"
+                    : "") +
+                  (c.damping.selector
+                    ? " · LOO selector: " + c.damping.selector +
+                      (c.damping.looErrV1 != null && c.damping.looErrV2 != null
+                        ? " (errV1 " + c.damping.looErrV1 + " vs errV2 " + c.damping.looErrV2 + ")"
+                        : "")
+                    : "") +
+                  " · amostras emp: " + (c.damping.empSamples || 0) +
+                  " (recent12 " + (c.damping.recentSamples || 0) + ")" +
+                  " · calibrado em " + (c.damping.wRecentSamples || 0) + " anos"
+                : "sem damping";
+              html +=
+                '<td class="numeric" title="' + tooltip.replace(/"/g, "&quot;") + '">' +
+                formatValue(c.previsto) +
+                adjBadge +
+                "</td>" +
+                '<td class="numeric">' +
+                (c.real != null ? formatValue(c.real) : "—") +
+                "</td>" +
+                '<td class="numeric err-cell ' + errCls + '">' +
+                (c.errorPct != null
+                  ? c.errorPct.toString().replace(".", ",") + "%"
+                  : "—") +
+                "</td>";
+            }
+          });
+
+          const avgCls =
+            r._avgErr == null
+              ? ""
+              : classifyError(r._avgErr, r.tolerancePct);
+          html +=
+            '<td class="numeric err-cell ' +
+            avgCls +
+            '">' +
+            (r._avgErr != null
+              ? r._avgErr.toFixed(1).replace(".", ",") + "%"
+              : "—") +
+            "</td>";
+
+          tr.innerHTML = html;
+          tbody.appendChild(tr);
+        });
+
+        if (truncated) {
+          const tr = document.createElement("tr");
+          const cols =
+            4 + months.length * subCols + 1;
+          tr.innerHTML =
+            '<td colspan="' +
+            cols +
+            '" style="text-align:center;color:var(--text-secondary);font-style:italic;padding:14px">' +
+            "Mostrando os " +
+            limit +
+            " primeiros SKUs (de " +
+            rows.length +
+            "). Use a busca para refinar.</td>";
+          tbody.appendChild(tr);
+        }
+
+        els.backtestResultsCard.style.display = "";
+      }
+
+      function renderBacktestSummary() {
+        const el = els.backtestSummary;
+        if (!backtestSummary.length) {
+          el.style.display = "none";
+          el.innerHTML = "";
+          return;
+        }
+        let totalSkus = 0,
+          totalHits = 0,
+          mapeSum = 0,
+          mapeN = 0,
+          withinSum = 0,
+          withinN = 0,
+          realTotal = 0,
+          prevTotal = 0;
+        backtestSummary.forEach((s) => {
+          totalSkus += s.skus || 0;
+          totalHits += s.skusComReal || 0;
+          if (s.mape != null) {
+            mapeSum += s.mape * (s.skusComReal || 1);
+            mapeN += s.skusComReal || 1;
+          }
+          if (s.pctDentroTolerancia != null) {
+            withinSum += s.pctDentroTolerancia * (s.skusComReal || 1);
+            withinN += s.skusComReal || 1;
+          }
+          realTotal += s.realTotal || 0;
+          prevTotal += s.prevTotal || 0;
+        });
+        // WAPE global direto de backtestData
+        let wapeNum = 0, wapeDen = 0;
+        backtestData.forEach((row) => {
+          if (row.errorAbs == null || row.real == null) return;
+          wapeNum += row.errorAbs;
+          wapeDen += Math.abs(row.real);
+        });
+        // Mecanismos v2: contagem de SKUs afetados
+        let v2Capped = 0, v2HardCap = 0, v2BiasedDown = 0, v2BiasedUp = 0,
+            v2DampingHigh = 0, v2Calibrated = 0, v2WithDamping = 0,
+            v2RegimeCollapse = 0, v2RegimeBoom = 0,
+            v2SelectV1 = 0, v2SelectV2 = 0;
+        backtestData.forEach((row) => {
+          const d = row.damping;
+          if (!d) return;
+          v2WithDamping += 1;
+          if (d.capApplied || d.wasCapped) v2Capped += 1;
+          if (d.fenceApplied || d.hardCapApplied) v2HardCap += 1;
+          if (d.biasFactor != null && d.biasFactor < 1) v2BiasedDown += 1;
+          if (d.biasFactor != null && d.biasFactor > 1) v2BiasedUp += 1;
+          if (d.wRecent != null && d.wRecent >= 0.5) v2DampingHigh += 1;
+          if (d.calibrated) v2Calibrated += 1;
+          if (d.regimeShift && d.regimeShift.direction === "collapse") v2RegimeCollapse += 1;
+          if (d.regimeShift && d.regimeShift.direction === "boom") v2RegimeBoom += 1;
+          if (d.selector === "v1" || d.selector === "v1+regime" || d.selector === "v1+momentum") v2SelectV1 += 1;
+          else if (d.selector === "v2") v2SelectV2 += 1;
+        });
+        const globalMape = mapeN ? mapeSum / mapeN : null;
+        const globalWithin = withinN ? withinSum / withinN : null;
+        const globalWape = wapeDen > 0 ? (wapeNum / wapeDen) * 100 : null;
+
+        function mapeClass(v) {
+          if (v == null) return "";
+          if (v <= 15) return "good";
+          if (v <= 30) return "warn";
+          return "bad";
+        }
+        function withinClass(v) {
+          if (v == null) return "";
+          if (v >= 70) return "good";
+          if (v >= 50) return "warn";
+          return "bad";
+        }
+        function fmtPct(v) {
+          return v == null ? "—" : v.toFixed(2).replace(".", ",") + "%";
+        }
+        function fmtNum(v) {
+          return v == null ? "—" : Math.round(v).toLocaleString("pt-BR");
+        }
+        function fmtSigned(v) {
+          if (v == null) return "—";
+          const s = v >= 0 ? "+" : "";
+          return s + Math.round(v).toLocaleString("pt-BR");
+        }
+
+        const overpro = prevTotal - realTotal;
+        const globalCards =
+          '<div class="summary-card global">' +
+          '<div class="lbl">MAPE médio geral</div>' +
+          '<div class="val ' + mapeClass(globalMape) + '">' +
+          fmtPct(globalMape) +
+          "</div>" +
+          '<div class="sub">erro percentual médio absoluto (menor é melhor)</div>' +
+          "</div>" +
+          '<div class="summary-card global">' +
+          '<div class="lbl">WAPE (impacto real)</div>' +
+          '<div class="val ' + mapeClass(globalWape) + '">' +
+          fmtPct(globalWape) +
+          "</div>" +
+          '<div class="sub">erro ponderado por volume</div>' +
+          "</div>" +
+          '<div class="summary-card global">' +
+          '<div class="lbl">Excesso de produção</div>' +
+          '<div class="val ' + (overpro >= 0 ? "warn" : "good") + '">' +
+          fmtSigned(overpro) +
+          "</div>" +
+          '<div class="sub">previsto ' + fmtNum(prevTotal) +
+          " vs real " + fmtNum(realTotal) + "</div>" +
+          "</div>" +
+          '<div class="summary-card global">' +
+          '<div class="lbl">Taxa de acerto</div>' +
+          '<div class="val ' + withinClass(globalWithin) + '">' +
+          fmtPct(globalWithin) +
+          "</div>" +
+          '<div class="sub">' + totalHits + " de " + totalSkus +
+          " SKUs com real · dentro da tolerância</div>" +
+          "</div>" +
+          '<div class="summary-card global">' +
+          '<div class="lbl">Ajustes aplicados (por SKU)</div>' +
+          '<div class="val">' +
+          v2Calibrated + " / " + v2WithDamping +
+          "</div>" +
+          '<div class="sub">fence: ' + v2HardCap +
+          " · soft cap: " + v2Capped +
+          "<br>regime colapso: " + v2RegimeCollapse +
+          " · regime boom: " + v2RegimeBoom +
+          "<br>viés baixo: " + v2BiasedDown +
+          " · viés alto: " + v2BiasedUp +
+          "<br>damping forte (w≥0,5): " + v2DampingHigh +
+          "<br>LOO escolheu v1: " + v2SelectV1 +
+          " · v2: " + v2SelectV2 +
+          "</div>" +
+          "</div>";
+
+        const monthCards = backtestSummary
+          .map((s) => {
+            return (
+              '<div class="summary-card">' +
+              '<div class="lbl">' + formatMonth(s.mes) + "</div>" +
+              '<div class="val ' + mapeClass(s.mape) + '">' +
+              fmtPct(s.mape) +
+              "</div>" +
+              '<div class="sub">MAPE · ' +
+              s.skusComReal + "/" + (s.skus || 0) +
+              " SKUs com real · " +
+              fmtPct(s.pctDentroTolerancia) +
+              " dentro da tolerância</div>" +
+              "</div>"
+            );
+          })
+          .join("");
+
+        el.innerHTML = globalCards + monthCards;
+        el.style.display = "flex";
+      }
+
+      // ---- Persistência local ----
+      const BACKTEST_LS_KEY = "ut_backtest_v1";
+      function saveBacktestToStorage() {
+        try {
+          localStorage.setItem(
+            BACKTEST_LS_KEY,
+            JSON.stringify({
+              data: backtestData,
+              summary: backtestSummary,
+              savedAt: Date.now(),
+            }),
+          );
+        } catch (e) {
+          /* quota / disabled */
+        }
+      }
+      function loadBacktestFromStorage() {
+        try {
+          const raw = localStorage.getItem(BACKTEST_LS_KEY);
+          if (!raw) return false;
+          const obj = JSON.parse(raw);
+          if (!obj || !Array.isArray(obj.data) || !Array.isArray(obj.summary))
+            return false;
+          backtestData = obj.data;
+          backtestSummary = obj.summary;
+          backtestSavedAt = obj.savedAt || null;
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+      function clearBacktestStorage() {
+        try {
+          localStorage.removeItem(BACKTEST_LS_KEY);
+        } catch (e) {}
+      }
+      let backtestSavedAt = null;
+      let backtestIsRunning = false;
+
+      function renderBacktestResultsHeader(opts) {
+        const cached = !!(opts && opts.cached);
+        const header = els.backtestResultsHeader;
+        const meta = els.backtestResultsMeta;
+        if (!backtestData.length) {
+          header.style.display = "none";
+          els.clearBacktestBtn.style.display = "none";
+          return;
+        }
+        const months = backtestSummary.length;
+        meta.innerHTML =
+          "<strong>" +
+          backtestData.length +
+          "</strong> linhas · <strong>" +
+          months +
+          "</strong> mês(es) analisado(s)" +
+          (cached && backtestSavedAt
+            ? '<span class="cached">salvo localmente</span>'
+            : "");
+        header.style.display = "flex";
+        els.clearBacktestBtn.style.display = backtestIsRunning
+          ? "none"
+          : "inline-flex";
+      }
+
+      function renderBacktestAll(opts) {
+        renderBacktestSummary();
+        renderBacktest();
+        renderBacktestResultsHeader(opts);
+        els.backtestHelp.style.display = backtestData.length ? "" : "none";
+      }
+
+      // ---- Loading state ----
+      function setBacktestLoading(on, info) {
+        backtestIsRunning = !!on;
+        els.backtestLoading.style.display = on ? "" : "none";
+        els.runBacktestBtn.disabled = !!on;
+        els.clearBacktestBtn.disabled = !!on;
+        if (on) {
+          els.runBacktestBtn.innerHTML =
+            '<span class="btn-spinner"></span> Executando...';
+          els.clearBacktestBtn.style.display = "none";
+        } else {
+          els.runBacktestBtn.innerHTML =
+            '<span class="material-icons" style="font-size:18px">play_arrow</span> Rodar backtest';
+        }
+        if (on && info) updateBacktestProgress(info);
+      }
+      function updateBacktestProgress(info) {
+        if (!info) return;
+        if (info.title) els.backtestLoadingTitle.textContent = info.title;
+        if (info.sub) els.backtestLoadingSub.textContent = info.sub;
+        const pct =
+          info.total && info.total > 0
+            ? Math.min(100, Math.round((info.done / info.total) * 100))
+            : 0;
+        els.backtestProgressBar.style.width = pct + "%";
+        els.backtestProgressLabel.textContent =
+          (info.done || 0) + " de " + (info.total || "?") + " SKUs";
+        els.backtestProgressPct.textContent = pct + "%";
+      }
+
+      function renderBacktestErrors(errors) {
+        const el = els.backtestErrors;
+        if (!errors || !errors.length) {
+          el.style.display = "none";
+          el.innerHTML = "";
+          return;
+        }
+        el.innerHTML =
+          '<div class="err-title"><span class="material-icons" style="font-size:18px">error_outline</span>' +
+          " Falhas durante o backtest (" +
+          errors.length +
+          ")</div><ul>" +
+          errors.map((e) => "<li>" + e + "</li>").join("") +
+          "</ul>";
+        el.style.display = "";
+      }
+
+      // Tamanho do chunk de SKUs por requisição.
+      // Mantém cada execução do n8n curta para não estourar o task-runner.
+      // Sobrescrito pela resposta de phase='start'.
+      let BACKTEST_SKU_CHUNK = 30;
+      const BACKTEST_INTER_CHUNK_DELAY_MS = 400;
+
+      async function startBacktestSession(attempt) {
+        const r = await fetch(API_BACKTEST, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phase: "start" }),
+        });
+        const text = await r.text();
+        if (!r.ok) {
+          if ((r.status === 524 || r.status === 522 || r.status === 502) && (attempt || 0) < 1) {
+            await new Promise((res) => setTimeout(res, 4000));
+            return startBacktestSession((attempt || 0) + 1);
+          }
+          throw new Error(
+            "HTTP " + r.status + (text ? " \u2014 " + text.slice(0, 200) : ""),
+          );
+        }
+        if (!text || !text.trim()) {
+          throw new Error(
+            "Resposta vazia em phase=start (workflow 'Universo-Backtest v2' inativo? Path /webhook/Backtest correto?)",
+          );
+        }
+        let json;
+        try { json = JSON.parse(text); }
+        catch (pe) { throw new Error("JSON inválido em phase=start: " + text.slice(0, 200)); }
+        if (typeof json.chunkSize === "number" && json.chunkSize > 0) {
+          BACKTEST_SKU_CHUNK = json.chunkSize;
+        }
+        return json;
+      }
+
+      async function runBacktestChunk(month, offset, limit, attempt) {
+        const r = await fetch(API_BACKTEST, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phase: "chunk",
+            targetMonths: [month],
+            skuOffset: offset,
+            skuLimit: limit,
+          }),
+        });
+        const text = await r.text();
+        if (!r.ok) {
+          if ((r.status === 524 || r.status === 522 || r.status === 502) && (attempt || 0) < 1) {
+            await new Promise((res) => setTimeout(res, 4000));
+            return runBacktestChunk(month, offset, limit, (attempt || 0) + 1);
+          }
+          throw new Error(
+            "HTTP " + r.status + (text ? " \u2014 " + text.slice(0, 200) : ""),
+          );
+        }
+        if (!text || !text.trim()) {
+          throw new Error(
+            "Resposta vazia (workflow 'Universo-Backtest' inativo? URL /webhook/Backtest correta?)",
+          );
+        }
+        let json;
+        try { json = JSON.parse(text); }
+        catch (pe) { throw new Error("JSON inválido: " + text.slice(0, 200)); }
+        return {
+          data: Array.isArray(json.data) ? json.data : [],
+          summary: Array.isArray(json.summary) ? json.summary : [],
+          totalSkus: typeof json.totalSkus === "number" ? json.totalSkus : 0,
+          processedSkus: typeof json.processedSkus === "number" ? json.processedSkus : 0,
+          nextOffset: typeof json.nextOffset === "number" ? json.nextOffset : (offset + limit),
+          hasMore: !!json.hasMore,
+        };
+      }
+
+      // ---- Persistência de progresso (resumível após reload) ----
+      const BACKTEST_PROGRESS_KEY = "ut_backtest_progress_v1";
+      function _btSaveProgress(s) {
+        try { localStorage.setItem(BACKTEST_PROGRESS_KEY, JSON.stringify(s)); } catch (e) {}
+      }
+      function _btLoadProgress() {
+        try { const r = localStorage.getItem(BACKTEST_PROGRESS_KEY); return r ? JSON.parse(r) : null; } catch (e) { return null; }
+      }
+      function _btClearProgress() {
+        try { localStorage.removeItem(BACKTEST_PROGRESS_KEY); } catch (e) {}
+      }
+      function _btDefaultAcc() {
+        return { n: 0, mapeSum: 0, hits: 0, withinTol: 0,
+          wapeNum: 0, wapeDen: 0,
+          realSum: 0, prevSum: 0 };
+      }
+      function _btUpdateAcc(acc, row) {
+        acc.n += 1;
+        if (row.errorPct != null) {
+          acc.mapeSum += row.errorPct;
+          acc.hits += 1;
+          if (row.dentroDaTolerancia) acc.withinTol += 1;
+          acc.wapeNum += row.errorAbs || 0;
+          acc.wapeDen += Math.abs(row.real);
+          acc.realSum += row.real;
+          acc.prevSum += row.previsto;
+        }
+      }
+      function _btBuildSummary(month, acc) {
+        return {
+          mes: month, skus: acc.n, skusComReal: acc.hits,
+          mape: acc.hits ? parseFloat((acc.mapeSum / acc.hits).toFixed(2)) : null,
+          wape: acc.wapeDen > 0 ? parseFloat(((acc.wapeNum / acc.wapeDen) * 100).toFixed(2)) : null,
+          pctDentroTolerancia: acc.hits ? parseFloat(((acc.withinTol / acc.hits) * 100).toFixed(2)) : null,
+          realTotal: parseFloat(acc.realSum.toFixed(3)),
+          prevTotal: parseFloat(acc.prevSum.toFixed(3)),
+        };
+      }
+
+      // Roda 1 mês por vez, em chunks de SKUs, agregando no front.
+      // `initial` permite retomar a partir de um snapshot persistido.
+      async function runBacktestForMonth(month, onProgress, initial) {
+        let offset = (initial && typeof initial.offset === "number") ? initial.offset : 0;
+        let totalSkus = (initial && initial.totalSkus) || 0;
+        const monthData = (initial && Array.isArray(initial.data)) ? initial.data.slice() : [];
+        const acc = (initial && initial.acc)
+          ? Object.assign(_btDefaultAcc(), initial.acc)
+          : _btDefaultAcc();
+
+        while (true) {
+          const res = await runBacktestChunk(month, offset, BACKTEST_SKU_CHUNK);
+          if (res.totalSkus) totalSkus = res.totalSkus;
+          for (const row of res.data) {
+            monthData.push(row);
+            _btUpdateAcc(acc, row);
+          }
+          offset = res.nextOffset;
+          if (onProgress) onProgress({ month, offset, totalSkus, data: monthData, acc });
+          if (!res.hasMore || res.processedSkus === 0) break;
+          if (BACKTEST_INTER_CHUNK_DELAY_MS > 0) {
+            await new Promise((r) => setTimeout(r, BACKTEST_INTER_CHUNK_DELAY_MS));
+          }
+        }
+
+        return { data: monthData, summary: _btBuildSummary(month, acc), totalSkus };
+      }
+
+      // Núcleo de execução (usado tanto por nova run quanto por retomada).
+      // `state` precisa conter: selected, currentIndex, current, doneData,
+      // doneSummary, errors, startedAt. É persistido a cada chunk em
+      // localStorage para sobreviver a reload da página.
+      async function executeBacktest(state) {
+        const resuming = !!(state.current || state.currentIndex > 0);
+
+        // Resultados acumulados de meses já concluídos (caso de retomada)
+        backtestData = state.doneData.slice();
+        backtestSummary = Object.values(state.doneSummary).sort((a, b) =>
+          a.mes.localeCompare(b.mes),
+        );
+        els.backtestStatus.className = "";
+        els.backtestStatus.textContent = "";
+        renderBacktestErrors(state.errors);
+        renderBacktestAll();
+
+        setBacktestLoading(true, {
+          title: resuming ? "Retomando processamento..." : "Preparando planilha...",
+          sub: "Baixando histórico para o cache",
+          done: 0,
+          total: 0,
+        });
+
+        // Sessão: garante que o cache Redis esteja válido (TTL 1h).
+        try {
+          await startBacktestSession();
+        } catch (e) {
+          setBacktestLoading(false);
+          els.backtestStatus.className = "is-error";
+          els.backtestStatus.textContent =
+            "Falha ao iniciar sessão: " + (e.message || "erro");
+          return;
+        }
+
+        _btSaveProgress(state);
+
+        const monthTotals = {};
+        const monthDone = {};
+        for (const m of Object.keys(state.doneSummary)) {
+          const s = state.doneSummary[m];
+          monthTotals[m] = s.skus; monthDone[m] = s.skus;
+        }
+        if (state.current) {
+          if (state.current.totalSkus) monthTotals[state.current.month] = state.current.totalSkus;
+          monthDone[state.current.month] = state.current.offset || 0;
+        }
+        function totalDone() {
+          return Object.values(monthDone).reduce((a, b) => a + b, 0);
+        }
+        function totalExpected() {
+          const known = Object.values(monthTotals).filter((v) => v > 0);
+          const avg = known.length ? Math.max.apply(null, known) : 0;
+          let t = 0;
+          state.selected.forEach((m) => {
+            t += monthTotals[m] != null ? monthTotals[m] : avg;
+          });
+          return t;
+        }
+
+        while (state.currentIndex < state.selected.length) {
+          const i = state.currentIndex;
+          const month = state.selected[i];
+          const initial = state.current && state.current.month === month ? state.current : null;
+          state.current = initial || { month, offset: 0, totalSkus: 0, data: [], acc: _btDefaultAcc() };
+          _btSaveProgress(state);
+
+          updateBacktestProgress({
+            title: "Mês " + (i + 1) + " de " + state.selected.length + " — " + formatMonth(month),
+            sub: "Processando SKUs...",
+            done: totalDone(), total: totalExpected(),
+          });
+
+          try {
+            const res = await runBacktestForMonth(month, (p) => {
+              if (p.totalSkus) monthTotals[month] = p.totalSkus;
+              monthDone[month] = p.offset;
+              state.current.offset = p.offset;
+              state.current.totalSkus = p.totalSkus;
+              state.current.data = p.data;
+              state.current.acc = p.acc;
+              _btSaveProgress(state);
+              updateBacktestProgress({
+                title: "Mês " + (i + 1) + " de " + state.selected.length + " — " + formatMonth(month),
+                sub: p.offset + " / " + (p.totalSkus || "?") + " SKUs deste mês",
+                done: totalDone(), total: totalExpected(),
+              });
+              backtestData = state.doneData.concat(p.data);
+              renderBacktest();
+            }, initial);
+
+            monthTotals[month] = res.totalSkus || res.data.length;
+            monthDone[month] = res.totalSkus || res.data.length;
+            state.doneData = state.doneData.concat(res.data);
+            state.doneSummary[month] = res.summary;
+            state.current = null;
+            state.currentIndex = i + 1;
+            _btSaveProgress(state);
+
+            backtestData = state.doneData.slice();
+            backtestSummary = Object.values(state.doneSummary).sort((a, b) =>
+              a.mes.localeCompare(b.mes),
+            );
+            renderBacktestAll();
+          } catch (e) {
+            console.error("Backtest error (" + month + "):", e);
+            state.errors.push(formatMonth(month) + ": " + (e.message || "erro"));
+            state.current = null;
+            state.currentIndex = i + 1;
+            _btSaveProgress(state);
+            renderBacktestErrors(state.errors);
+          }
+        }
+
+        setBacktestLoading(false);
+        backtestData = state.doneData.slice();
+        backtestSummary = Object.values(state.doneSummary).sort((a, b) =>
+          a.mes.localeCompare(b.mes),
+        );
+        backtestSavedAt = Date.now();
+        if (backtestData.length) saveBacktestToStorage();
+        _btClearProgress();
+        renderBacktestAll();
+        renderBacktestErrors(state.errors);
+
+        if (state.errors.length && backtestData.length === 0) {
+          els.backtestStatus.className = "is-error";
+          els.backtestStatus.textContent =
+            "Falha em todos os meses. Veja detalhes abaixo.";
+        } else if (state.errors.length) {
+          els.backtestStatus.className = "is-error";
+          els.backtestStatus.textContent =
+            "Concluído com falhas — " + backtestData.length +
+            " linhas em " + (state.selected.length - state.errors.length) +
+            "/" + state.selected.length + " meses.";
+        } else {
+          els.backtestStatus.className = "is-success";
+          els.backtestStatus.textContent =
+            "Concluído com sucesso — " + backtestData.length +
+            " linhas em " + state.selected.length + " mês(es).";
+        }
+      }
+
+      els.runBacktestBtn.addEventListener("click", async () => {
+        if (backtestIsRunning) return;
+        const selected = Array.from(backtestSelectedMonths).sort().reverse();
+        if (!selected.length) {
+          els.backtestStatus.className = "is-error";
+          els.backtestStatus.textContent = "Selecione pelo menos um mês.";
+          return;
+        }
+        // Substitui resultados anteriores
+        backtestData = [];
+        backtestSummary = [];
+        renderBacktestErrors([]);
+        renderBacktestAll();
+        await executeBacktest({
+          selected,
+          currentIndex: 0,
+          current: null,
+          doneData: [],
+          doneSummary: {},
+          errors: [],
+          startedAt: Date.now(),
+        });
+      });
+
+      // Aviso ao tentar fechar/recarregar enquanto está processando.
+      window.addEventListener("beforeunload", (e) => {
+        if (backtestIsRunning) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      });
+
+      els.clearBacktestBtn.addEventListener("click", () => {
+        if (backtestIsRunning) return;
+        if (!confirm("Remover os resultados salvos do backtest?")) return;
+        backtestData = [];
+        backtestSummary = [];
+        backtestSavedAt = null;
+        clearBacktestStorage();
+        renderBacktestErrors([]);
+        els.backtestStatus.className = "";
+        els.backtestStatus.textContent = "";
+        renderBacktestAll();
+      });
+
+      els.backtestSearch.addEventListener("input", renderBacktest);
+
+      // Restaura resultados salvos (se houver) ao carregar
+      if (loadBacktestFromStorage()) {
+        renderBacktestAll({ cached: true });
+      }
+
+      // Detecta processamento interrompido (reload/fechamento durante run).
+      // Mostra banner inline com botões "Retomar" / "Descartar".
+      (function checkInterruptedBacktest() {
+        const prog = _btLoadProgress();
+        if (!prog || !Array.isArray(prog.selected)) return;
+        const totalMonths = prog.selected.length;
+        const doneMonths = Math.max(0, prog.currentIndex || 0);
+        if (doneMonths >= totalMonths && !prog.current) {
+          _btClearProgress();
+          return;
+        }
+        const partial = prog.current
+          ? " (em " + formatMonth(prog.current.month) +
+            ", " + (prog.current.offset || 0) +
+            (prog.current.totalSkus ? "/" + prog.current.totalSkus : "") + " SKUs)"
+          : "";
+        els.backtestStatus.className = "";
+        els.backtestStatus.innerHTML =
+          '<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<span>Backtest interrompido — ' + doneMonths + '/' + totalMonths +
+          ' meses concluídos' + partial + '.</span>' +
+          '<button id="btResumeBtn" class="add-btn" style="padding:4px 10px;">Retomar</button>' +
+          '<button id="btDiscardProgressBtn" class="add-btn" style="padding:4px 10px;background:#eee;color:#333;">Descartar</button>' +
+          '</span>';
+        const resumeBtn = document.getElementById("btResumeBtn");
+        const discardBtn = document.getElementById("btDiscardProgressBtn");
+        if (resumeBtn) resumeBtn.addEventListener("click", () => {
+          // Restaura seleção visual
+          backtestSelectedMonths.clear();
+          prog.selected.forEach((m) => backtestSelectedMonths.add(m));
+          if (typeof renderBacktestMonthGrid === "function") renderBacktestMonthGrid();
+          els.backtestStatus.textContent = "";
+          executeBacktest(prog);
+        });
+        if (discardBtn) discardBtn.addEventListener("click", () => {
+          _btClearProgress();
+          els.backtestStatus.textContent = "";
+          els.backtestStatus.className = "";
+        });
+      })();
+
+      // ============================================
+      // APP START
+      // ============================================
+      async function startApp() {
+        if (appStarted) return;
+        appStarted = true;
+        await loadAndRender();
+      }
+
+      checkAuth();
+      document.addEventListener("DOMContentLoaded", () => {
+        lucide.createIcons();
+      });
+    </script>
+  </body>
+</html>

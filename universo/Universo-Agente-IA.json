@@ -1,0 +1,403 @@
+{
+  "name": "Universo-Agente-IA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "universo-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-chat",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        0
+      ],
+      "webhookId": "a1b2c3d4-univ-chat-0001-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst headers = item.headers || {};\nconst authHeader = headers.authorization || headers.Authorization;\nif (!authHeader || !String(authHeader).toLowerCase().startsWith('bearer ')) {\n  throw new Error('UNAUTHORIZED: missing bearer token');\n}\nconst body = item.body || {};\nconst sessionId = body.sessionId || item.sessionId;\nconst chatInput = body.chatInput || item.chatInput;\nif (!sessionId) throw new Error('sessionId is required');\nif (!chatInput) throw new Error('chatInput is required');\nreturn { authHeader, sessionId, chatInput };"
+      },
+      "id": "auth-guard",
+      "name": "Auth Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://longflatworm-supabase.cloudfy.live/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.authHeader }}"
+            },
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "validate-jwt",
+      "name": "Validate JWT (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const user = $input.first().json;\nconst auth = $('Auth Guard').first().json;\nconst userId = user && user.id;\nif (!userId) throw new Error('UNAUTHORIZED: invalid token');\nconst company = user && user.user_metadata && user.user_metadata.company_name;\nif (company !== 'universo_tintas') {\n  throw new Error('FORBIDDEN: user does not belong to universo_tintas');\n}\nconst prefix = `u_${userId}__`;\nconst sessionId = auth.sessionId;\nif (!String(sessionId).startsWith(prefix)) {\n  throw new Error('FORBIDDEN: session belongs to another user');\n}\nreturn { userId, prefix, sessionId, chatInput: auth.chatInput };"
+      },
+      "id": "build-context",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f-chatinput",
+              "name": "chatInput",
+              "value": "={{ $json?.chatInput || $json.body.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "f-sessionid",
+              "name": "sessionId",
+              "value": "={{ $json?.sessionId || $json.body.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "edit-fields",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "Você é o \"Analista de Previsão Universo Tintas\", um assistente que EXPLICA, em português claro, as previsões de demanda de SKUs e como o algoritmo chegou nelas. Seu público são pessoas de compras/planejamento — não técnicos. Traduza estatística em linguagem de negócio.\n\nCONTEXTO:\n- Data de hoje: {{ $now.setLocale('pt-br').toFormat('dd/MM/yyyy') }}\n- A previsão cobre os próximos 3 meses (um \"trimestre previsto\").\n- A interface mostra cada mês como uma FAIXA (mínimo–máximo) em peças, não um número único.\n\n==========================================================\nCOMO VOCÊ ACESSA OS DADOS\n==========================================================\nVocê tem UMA tool: `consultar_previsao`.\n- Para explicar um item específico: passe `sku` (código exato OU um trecho da descrição). Opcional: `mes` no formato AAAA-MM.\n- Para visão geral (\"quantos SKUs tiveram queda de regime?\", \"quais ajustes foram aplicados?\"): chame SEM `sku` para receber o resumo agregado.\n- Chame a tool no MÁXIMO 2 vezes por resposta. Se a tool retornar `erro`, explique o erro ao usuário (ex.: previsão não foi rodada ainda).\n- NUNCA invente números: só fale valores que vieram da tool.\n\n==========================================================\nDICIONÁRIO — COMO A PREVISÃO É FEITA\n==========================================================\nPara cada SKU/mês a previsão base combina 3 métodos (heurística de tendência, suavização exponencial e tendência sazonal), ponderados pelo desempenho histórico do próprio SKU. Depois, ajustes data-driven podem refinar o número. A tool devolve esses sinais em `meses[AAAA-MM]`:\n\n- `faixaMin` / `faixaMax`: a faixa exibida ao usuário (mín–máx em peças).\n- `previsao`: o ponto central (você normalmente fala a FAIXA, não o ponto).\n- `tolerancePct`: largura da faixa em %. Vem da variabilidade histórica (coeficiente de variação). Quanto mais o SKU oscila no passado, maior a faixa.\n- `confianca`: alta/média/baixa (depende de quantos anos de histórico e da estabilidade).\n- `tipo`: 'ensemble' (item normal), 'comprados_sma3' (item comprado/lead-time alto: média móvel 3 meses), 'sgb' (private label).\n- `decisao` (selector): qual caminho venceu na validação do próprio SKU:\n    • 'v2' = usou a calibração ajustada por SKU.\n    • 'v1' = usou a previsão estatística pura (o histórico mostrou que ela acerta mais).\n    • 'v1+momentum' = partiu da estatística pura mas ajustou levemente para o nível recente (crescimento/queda que o histórico ainda não tinha visto).\n    • 'v1+regime' = a estatística venceu, MAS há mudança de patamar agora, então puxou para o nível atual.\n- `regime`: mudança de patamar detectada AGORA (estatística, via Tukey/limites históricos):\n    • direcao 'collapse' = vendas caíram para fora do padrão → previsão foi reduzida.\n    • direcao 'boom' = vendas subiram para fora do padrão → previsão foi elevada.\n    • `pull` = força do ajuste (0–1). `razaoAtual` vs `limite` = o quanto saiu do normal.\n- `teto` (fence): a previsão bruta estourou um limite plausível (`limite` em peças) e foi cortada. direcao 'down' = teto; 'up' = piso.\n- `softCap`: true = item historicamente superestimado; previsão limitada a ~1,25× o nível recente.\n- `biasFactor`: viés multiplicativo. <1 = corrigido para baixo (costuma sobrar); >1 = para cima (costuma faltar); 1 = neutro.\n- `wRecent`: peso dado aos meses recentes vs média histórica (0 = só histórico, 1 = só recente).\n- `nivelRecente` / `ultimoReal`: média dos últimos meses / última venda real.\n- `overshootHist`: % de vezes que o modelo sobrestimou esse SKU no passado.\n- `looErrV1` / `looErrV2`: erro de validação cruzada de cada caminho (menor = melhor; explica por que 'decisao' foi escolhida).\n- `anosCalibrados`: nº de anos de histórico usados na calibração.\n\n==========================================================\nCOMO RESPONDER\n==========================================================\n1. Comece pela FAIXA prevista do(s) mês(es): \"Para julho, a previsão é entre X e Y peças.\"\n2. Explique em 1–3 frases COMO chegou: cite só os ajustes que de fato ocorreram (regime, teto, bias, momentum). Se nada foi ajustado e decisao='v2'/'v1' sem flags, diga que seguiu o padrão histórico estável.\n3. Conecte com o negócio: por que a faixa é larga/estreita (tolerancePct), e o que isso significa pra compra.\n4. Seja objetivo: frases curtas, bullets e tabelas quando útil. Não despeje números crus nem nomes internos de campos (traduza). Não mostre JSON.\n5. Termine com UMA pergunta curta de follow-up.\n\nEXEMPLO: \"Para julho, a previsão fica entre 55 e 145 peças (centro ~100). O modelo detectou que os últimos meses caíram abaixo do padrão histórico (queda de regime), então reduziu a estimativa puxando para o nível atual. A faixa é larga porque esse item oscila bastante de mês a mês. Quer que eu compare com o mês seguinte?\"\n\n==========================================================\nSEGURANÇA E ESCOPO\n==========================================================\n- Você é somente leitura. Não altera dados nem dispara previsões.\n- Não exponha JWT, IDs internos, credenciais ou nomes de campos técnicos.\n- Fora do escopo (previsão de demanda Universo Tintas), diga que não é sua área.",
+          "maxIterations": 10
+        }
+      },
+      "id": "ai-agent",
+      "name": "Analista de Previsão",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-5.4-mini",
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAzureOpenAi",
+      "typeVersion": 1,
+      "position": [
+        620,
+        260
+      ],
+      "id": "azure-model",
+      "name": "Azure OpenAI Chat Model",
+      "credentials": {
+        "azureOpenAiApi": {
+          "id": "xby4FSbCaCnssJxl",
+          "name": "Azure Open AI account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableName": "universo_chat_message"
+      },
+      "id": "chat-memory",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Consulta a previsão de demanda em cache. Use `sku` (código exato OU trecho da descrição) para explicar um item específico; opcionalmente `mes` no formato AAAA-MM. Chame SEM `sku` para um resumo agregado (quantos SKUs tiveram queda/alta de regime, teto aplicado, etc.). Retorna faixaMin/faixaMax em peças e os sinais de decisão do algoritmo (selector, regime, teto, bias). NÃO escreve nada.",
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_GETFORECAST_TOOL_WORKFLOW_ID",
+          "mode": "id",
+          "cachedResultName": "Universo-GetForecast-Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sku": "={{ $fromAI('sku', 'Código exato do SKU ou um trecho da descrição do produto. Deixe vazio para resumo agregado.', 'string') }}",
+            "mes": "={{ $fromAI('mes', 'Mês alvo no formato AAAA-MM (opcional). Vazio retorna todos os meses previstos.', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "mes",
+              "displayName": "mes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        940,
+        260
+      ],
+      "id": "tool-forecast",
+      "name": "consultar_previsao"
+    },
+    {
+      "parameters": {
+        "description": "Explica o cálculo de previsão para um SKU específico com foco em negócio. Retorna resumo por mês, método dominante, base combinada, ajustes aplicados (regime/teto/bias) e faixa final. Use quando o usuário pedir 'como chegou nesse número' ou 'explique o cálculo'.",
+        "workflowId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_EXPLAINCALC_TOOL_WORKFLOW_ID",
+          "mode": "id",
+          "cachedResultName": "Universo-ExplainCalc-Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sku": "={{ $fromAI('sku', 'Código exato do SKU ou trecho da descrição para explicar o cálculo.', 'string') }}",
+            "mes": "={{ $fromAI('mes', 'Mês alvo no formato AAAA-MM (opcional).', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "mes",
+              "displayName": "mes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1180,
+        260
+      ],
+      "id": "tool-explain-sku",
+      "name": "explicar_calculo_sku"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Universo-Agente-IA — chat que explica as previsões\n\n**Fluxo:** Webhook (`/webhook/universo-chat`, POST) → valida JWT Supabase (company `universo_tintas`) → AI Agent → resposta.\n\n**Modelo:** Azure OpenAI `gpt-5.4-mini` (mesma credencial do agente original).\n\n**Tool:** `consultar_previsao` chama o sub-workflow **Universo-GetForecast-Tool**, que lê a LIST `predict-response` no Redis e devolve a previsão + o `damping` decodificado.\n\n### ANTES DE ATIVAR\n1. Importe **Universo-GetForecast-Tool.json** primeiro.\n2. Aqui, no nó `consultar_previsao`, troque `REPLACE_WITH_GETFORECAST_TOOL_WORKFLOW_ID` pelo ID do workflow importado (ou selecione-o na lista).\n3. Crie a tabela de memória `universo_chat_message` (o nó cria sozinho na 1ª execução se a credencial tiver permissão).\n4. Body do POST: `{ \"sessionId\": \"u_<userId>__<algo>\", \"chatInput\": \"...\" }` + header `Authorization: Bearer <token Supabase>`.",
+        "height": 360,
+        "width": 560,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -400,
+        -420
+      ],
+      "typeVersion": 1,
+      "id": "readme-note"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Guard": {
+      "main": [
+        [
+          {
+            "node": "Validate JWT (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate JWT (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Build Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Context": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Analista de Previsão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analista de Previsão",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Analista de Previsão",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consultar_previsao": {
+      "ai_tool": [
+        [
+          {
+            "node": "Analista de Previsão",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analista de Previsão": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "tags": []
+}

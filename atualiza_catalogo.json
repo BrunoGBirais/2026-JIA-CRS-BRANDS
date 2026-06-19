@@ -1,0 +1,582 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔐 ETL Webhook — Atualizar Catálogo (Snapshot)\n\n**Ativado por:** `front.html` ao confirmar a substituição de planilha.\n\n**Fluxo (sem nó SpreadsheetFile — igual ao exemplo.json):**\n1. Webhook recebe POST multipart: `file` (CSV) + `Authorization: Bearer <JWT>`\n2. Valida admin via RPC `imagens_bahia_validate_admin`\n3. **Parse CSV & Detect** (Code): lê o binário direto do Webhook, faz parse do CSV e detecta UM de dois formatos:\n   - `catalogo_produtos` → `imagens_bahia_produtos_rows`\n   - `catalogo_precos`   → `imagens_bahia_precos`\n4. Switch por `_tipo`\n5. **Produtos:** TRUNCATE + INSERT (snapshot completo da planilha)\n6. **Preços:** limpeza (vírgula BR) + UPSERT\n\n### ⚠️ Configure antes de usar\n1. Credencial **Postgres** (Supabase_database) nos nós TRUNCATE/INSERT/UPSERT.\n2. Webhook path: `imagens_bahia-etl-catalogo`.",
+        "height": 380,
+        "width": 600,
+        "color": 4
+      },
+      "id": "a8c72ce4-0111-4a8e-b2b8-146ef0dcf10b",
+      "name": "Sticky Note Setup1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        6544,
+        6048
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "imagens_bahia-etl-catalogo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f1c634b8-fe06-4801-ae4b-4ca0d266c86c",
+      "name": "Webhook Trigger1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        6544,
+        6512
+      ],
+      "webhookId": "imagens_bahia-etl-catalogo-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "184b56bb-bccc-4330-a6fd-5dcd647bf853",
+              "leftValue": "={{ $json.headers.authorization }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        6768,
+        6512
+      ],
+      "id": "1f3d9092-513c-41fa-9b3a-9dbabc811a1a",
+      "name": "Tem Authorization?1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Credenciais inválidas ou token ausente.' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "795bc7fa-d6dc-4452-bb53-c75a1165377c",
+      "name": "401 Sem Token1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        7024,
+        6736
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/rpc/imagens_bahia_validate_admin",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization }}"
+            },
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "options": {}
+      },
+      "id": "b5e17d87-2df0-4140-ad28-f3f447212bd7",
+      "name": "Validate Admin RPC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7024,
+        6416
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "chk001",
+              "leftValue": "={{ $json.role}}",
+              "rightValue": "admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "787b43b2-027d-436f-81ff-1679719c5687",
+      "name": "Admin OK?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7264,
+        6416
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Acesso negado: apenas administradores.' }) }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "cad0b195-2a9f-423c-bfb7-7e91899140e6",
+      "name": "403 Não Admin1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        7680,
+        6576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recoloca a referência do binário do Webhook no item atual.\n// O nó HTTP \"Validate Admin RPC\" substitui o item e descarta o binário;\n// aqui restauramos a metadata (com o id do arquivo em filesystem) para que o\n// próximo Code Node possa lê-lo via this.helpers.getBinaryDataBuffer.\nconst wh = $('Webhook Trigger1').first();\nif (!wh || !wh.binary || !Object.keys(wh.binary).length) {\n  throw new Error('O webhook não recebeu nenhum arquivo binário.');\n}\nconst item = $input.first();\nitem.binary = wh.binary;\nreturn [item];\n"
+      },
+      "id": "20c27591-09f1-4d55-9825-f087368685db",
+      "name": "Restaurar Binário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7680,
+        6320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Parse CSV & Detect (estilo exemplo.json) =====\n// Faz parse do CSV enviado e detecta UM de dois formatos possíveis:\n//   catalogo_produtos -> imagens_bahia_produtos_rows  (referencia/SKU, Codigo_de_preco, Nome, NCM...)\n//   catalogo_precos    -> imagens_bahia_precos        (codigo, valor_padrao_varejo, valor_*...)\n// O binário é restaurado no nó anterior (\"Restaurar Binário\") e lido aqui com\n// this.helpers.getBinaryDataBuffer — único helper suportado no Code Node (Cloud,\n// binaryDataMode=filesystem). Não usa SpreadsheetFile nem getBinaryStream.\n\nconst bin = $input.first().binary || {};\nconst binProp = bin.file ? 'file' : Object.keys(bin)[0];\nif (!binProp) {\n  throw new Error('O webhook não recebeu nenhum arquivo binário.');\n}\nconst buf = await this.helpers.getBinaryDataBuffer(0, binProp);\n\nlet text = buf.toString('utf8');\nif (((text.match(/\\uFFFD/g) || []).length) > 3) text = buf.toString('latin1');\ntext = text.replace(/^\\uFEFF/, '');\n\nconst lines = text.split(/\\r?\\n/).filter((l) => l.trim().length);\nif (!lines.length) throw new Error('Arquivo vazio.');\n\n// Detecta o separador (',' ou ';').\nconst sniff = lines.slice(0, 8).join('\\n');\nconst delim = ((sniff.split(';').length) >= (sniff.split(',').length)) ? ';' : ',';\n\nfunction parseLine(line) {\n  const out = []; let cur = ''; let q = false;\n  for (let i = 0; i < line.length; i++) {\n    const ch = line[i];\n    if (q) {\n      if (ch === '\"') { if (line[i + 1] === '\"') { cur += '\"'; i++; } else q = false; }\n      else cur += ch;\n    } else {\n      if (ch === '\"') q = true;\n      else if (ch === delim) { out.push(cur); cur = ''; }\n      else cur += ch;\n    }\n  }\n  out.push(cur);\n  return out.map((s) => s.trim());\n}\n\nconst header = parseLine(lines[0]);\nconst rows = [];\nfor (let i = 1; i < lines.length; i++) {\n  const cells = parseLine(lines[i]);\n  if (cells.every((c) => c === '')) continue;\n  const o = {};\n  header.forEach((k, idx) => { if (k) o[k] = cells[idx] != null ? cells[idx] : ''; });\n  rows.push(o);\n}\nif (!rows.length) throw new Error('Nenhuma linha de dados encontrada no arquivo.');\n\n// Detecta o formato a partir do cabeçalho.\nconst hj = header.join('|').toLowerCase();\nlet tipo = null;\nif (hj.includes('valor_') || hj.includes('tabela_numero')) {\n  tipo = 'catalogo_precos';\n} else if (hj.includes('codigo_de_preco') || hj.includes('referencia/sku') || hj.includes('ncm') || hj.includes('nome')) {\n  tipo = 'catalogo_produtos';\n}\nif (!tipo) {\n  throw new Error('Formato não reconhecido: envie o CSV de produtos (imagens_bahia_produtos_rows) ou de preços (imagens_bahia_precos).');\n}\n\nreturn rows.map((r) => ({ json: Object.assign({}, r, { _tipo: tipo }) }));\n"
+      },
+      "id": "f2a58a91-f879-4c5b-ac08-9fa0f53c3250",
+      "name": "Parse CSV & Detect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7952,
+        6320
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "sw001",
+                    "leftValue": "={{ $json._tipo }}",
+                    "rightValue": "catalogo_produtos",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Produtos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "sw002",
+                    "leftValue": "={{ $json._tipo }}",
+                    "rightValue": "catalogo_precos",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Precos"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5cc2358f-5858-4fd0-a4e2-5b15a4634b33",
+      "name": "Switch - replace_target1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        8208,
+        6320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "TRUNCATE TABLE public.imagens_bahia_produtos_rows;",
+        "options": {}
+      },
+      "id": "031f4c21-fb44-4bbc-ae94-166001921f1c",
+      "name": "TRUNCATE Produtos1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        8448,
+        6160
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Após o TRUNCATE (cujo output é vazio), recupera as linhas já parseadas\n// do nó \"Parse CSV & Detect\" para alimentar o INSERT (snapshot completo).\nreturn $('Parse CSV & Detect').all().map((it) => {\n  const j = Object.assign({}, it.json);\n  delete j._tipo;\n  return { json: j };\n});\n"
+      },
+      "id": "d0aeea17-d3e0-4144-a657-dbc84b93c042",
+      "name": "Linhas Produtos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8672,
+        6160
+      ]
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "imagens_bahia_produtos_rows",
+          "mode": "list",
+          "cachedResultName": "imagens_bahia_produtos_rows"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "cc19554d-1541-4e06-86e6-d69e6a8d9e5f",
+      "name": "INSERT Produtos1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        8880,
+        6160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, message: 'Catálogo de produtos atualizado com sucesso.', linhas: $('Parse CSV & Detect').all().length }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "1fc77227-7fb5-46ea-913f-436ee1bbd58d",
+      "name": "200 OK Produtos1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        9104,
+        6160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== Code Node: Limpeza de Preços (tabela WIDE) =====\n// Converte vírgula decimal BR -> ponto (float US) em TODAS as colunas valor_*.\n\nfunction brParaFloat(v) {\n  if (v === undefined || v === null) return null;\n  let s = String(v).trim();\n  if (s === '') return null;\n  if (s.indexOf(',') !== -1) s = s.replace(/\\./g, '');\n  s = s.replace(',', '.');\n  s = s.replace(/[^0-9.\\-]/g, '');\n  const n = parseFloat(s);\n  return Number.isNaN(n) ? null : n;\n}\n\nconst saida = items.map((item) => {\n  const out = {};\n  for (const [k, v] of Object.entries(item.json)) {\n    const key = String(k).trim();\n    if (key.startsWith('valor_')) {\n      out[key] = brParaFloat(v);\n    } else if (key === 'tabela_numero') {\n      const n = parseInt(String(v).replace(/\\D/g, ''), 10);\n      if (!Number.isNaN(n)) out[key] = n;\n    } else if (key === 'codigo' || key === 'resina_ref') {\n      const s = v === undefined || v === null ? '' : String(v).trim();\n      out[key] = s === '' ? null : s;\n    }\n  }\n  return { json: out };\n});\n\nreturn saida.filter((i) => i.json.codigo);\n"
+      },
+      "id": "ea956a8d-4807-4b38-83a4-9c7f3077e7f0",
+      "name": "Code - Limpeza Preços1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8448,
+        6480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "imagens_bahia_precos",
+          "mode": "list",
+          "cachedResultName": "imagens_bahia_precos"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [
+            "codigo"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "885bf455-9019-4c30-9565-4093c56b73b6",
+      "name": "UPSERT Preços1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        8672,
+        6480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "jFjeYH6Nt3aRNkoM",
+          "name": "Supabase_database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, message: 'Catálogo de preços atualizado com sucesso.', linhas: $('Code - Limpeza Preços1').all().length }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "937b8bc7-9b91-4c1f-9230-36045900bb2a",
+      "name": "200 OK Preços1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        8880,
+        6480
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Tem Authorization?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Authorization?1": {
+      "main": [
+        [
+          {
+            "node": "Validate Admin RPC",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 Sem Token1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Admin RPC": {
+      "main": [
+        [
+          {
+            "node": "Admin OK?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin OK?1": {
+      "main": [
+        [
+          {
+            "node": "Restaurar Binário",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "403 Não Admin1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurar Binário": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV & Detect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV & Detect": {
+      "main": [
+        [
+          {
+            "node": "Switch - replace_target1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - replace_target1": {
+      "main": [
+        [
+          {
+            "node": "TRUNCATE Produtos1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Limpeza Preços1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TRUNCATE Produtos1": {
+      "main": [
+        [
+          {
+            "node": "Linhas Produtos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linhas Produtos": {
+      "main": [
+        [
+          {
+            "node": "INSERT Produtos1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INSERT Produtos1": {
+      "main": [
+        [
+          {
+            "node": "200 OK Produtos1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Limpeza Preços1": {
+      "main": [
+        [
+          {
+            "node": "UPSERT Preços1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "UPSERT Preços1": {
+      "main": [
+        [
+          {
+            "node": "200 OK Preços1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  }
+}

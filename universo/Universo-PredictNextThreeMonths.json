@@ -1,0 +1,194 @@
+{
+  "name": "Universo-PredictNextThreeMonths",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "PredictNextThreeMonths",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -784,
+        -32
+      ],
+      "id": "783c61e4-4e89-4cc9-b6ea-9735d5904a11",
+      "name": "Webhook",
+      "webhookId": "6d91746b-e36d-4f37-9a2d-bf9344004c85"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "6opnAbTymeJqHq4R",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/6opnAbTymeJqHq4R",
+          "cachedResultName": "Universo-Predict"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -224,
+        -32
+      ],
+      "id": "01aaac23-1a48-443e-83f5-2b0e5d9ce1ee",
+      "name": "Call 'Universo-Predict'"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{  $('Call \\'Universo-Predict\\'').item.json }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        48,
+        -32
+      ],
+      "id": "710f3933-1f27-4859-bcd3-0cd84d323de1",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "content": "### Response Contract:\n\n```\n[\n  {\n    \"SKU\": 3010083,\n    \"Descrição\": \"VERNIZ TRIPLO FILTRO SOLAR PREMIUM\",\n    \"2026-05\": 161.527,\n    \"2026-06\": 150.427,\n    \"2026-07\": 75.289\n  },\n...\n]",
+        "height": 464,
+        "width": 592,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -48,
+        -320
+      ],
+      "typeVersion": 1,
+      "id": "d091042a-6e6a-4f87-90f0-b7f8bf1a4877",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "predict-response"
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        -32
+      ],
+      "id": "8854c143-96b4-447b-8baa-9be31457dbbc",
+      "name": "Purge Cache",
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### Purge cache before predicting again",
+        "height": 256,
+        "width": 256
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -544,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "2b40a500-3935-44b7-b4f8-d78a386c311c",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -784,
+        112
+      ],
+      "id": "1c96a2c1-2966-4830-9e8b-8722f85bbda5",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Purge Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Universo-Predict'": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Purge Cache": {
+      "main": [
+        [
+          {
+            "node": "Call 'Universo-Predict'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Purge Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "aac91c35-062a-48b9-b1b0-0e957eded402",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "id": "t5fP2XLw5V8W1VUn",
+  "tags": []
+}

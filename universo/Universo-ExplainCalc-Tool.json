@@ -1,0 +1,102 @@
+{
+  "name": "Universo-ExplainCalc-Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -40,
+        0
+      ],
+      "id": "tool-trigger",
+      "name": "Start"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "response",
+        "key": "predict-response",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        200,
+        0
+      ],
+      "id": "tool-redis-get",
+      "name": "Redis GET predict-response",
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const trig = $('Start').first().json || {};\nconst skuInput = (trig.sku || '').toString().trim();\nconst mes = (trig.mes || '').toString().trim();\n\nif (!skuInput) {\n  return [{ json: { erro: 'Informe o SKU (código exato ou trecho da descrição).', exemplo: { sku: '76155035', mes: '2026-07' } } }];\n}\n\nconst raw = $json.response;\nlet env = null;\ntry {\n  if (Array.isArray(raw)) env = JSON.parse(raw[0]);\n  else if (typeof raw === 'string') env = JSON.parse(raw);\n} catch (e) {\n  env = null;\n}\n\nif (!env || !Array.isArray(env.data) || !env.data.length) {\n  return [{ json: { erro: 'Sem previsão em cache. Rode a previsão (Predict) antes de pedir explicação.' } }];\n}\n\nconst data = env.data;\nconst q = skuInput.toLowerCase();\nconst isExact = (r) => String(r.SKU || '').toLowerCase() === q;\nconst isText = (r) => String(r.SKU || '').toLowerCase().includes(q) || String(r['Descrição'] || '').toLowerCase().includes(q);\n\nconst exact = data.filter(isExact);\nconst hits = exact.length ? exact : data.filter(isText);\n\nif (!hits.length) {\n  return [{ json: { erro: `Nenhum SKU encontrado para '${skuInput}'.` } }];\n}\n\nif (hits.length > 1) {\n  return [{\n    json: {\n      erro: `Encontrei ${hits.length} SKUs para '${skuInput}'. Seja mais específico no código.`,\n      opcoes: hits.slice(0, 10).map((r) => ({ sku: r.SKU, descricao: r['Descrição'] }))\n    }\n  }];\n}\n\nconst row = hits[0];\nconst detalhes = row.detalhes || {};\nlet meses = Object.keys(detalhes).sort();\nif (mes) meses = meses.filter((m) => m === mes);\n\nif (!meses.length) {\n  return [{ json: { erro: mes ? `O SKU ${row.SKU} não tem dados para o mês ${mes}.` : `O SKU ${row.SKU} não possui detalhes de previsão.` } }];\n}\n\nfunction n(v, d = 2) {\n  if (v == null || Number.isNaN(Number(v))) return null;\n  return Number(Number(v).toFixed(d));\n}\n\nfunction dominantMethod(metodos, pesos) {\n  if (!pesos || typeof pesos !== 'object') return null;\n  let best = null;\n  for (const k of Object.keys(pesos)) {\n    const w = Number(pesos[k]);\n    if (!Number.isFinite(w)) continue;\n    if (!best || w > best.peso) best = { metodo: k, peso: w, valor: metodos && metodos[k] != null ? Number(metodos[k]) : null };\n  }\n  return best;\n}\n\nfunction labelMetodo(k) {\n  const map = {\n    heuristica: 'Heurística de tendência',\n    suavizacaoExponencial: 'Suavização exponencial',\n    tendenciaSazonal: 'Tendência sazonal',\n    mediaMovel3: 'Média móvel de 3 meses'\n  };\n  return map[k] || k;\n}\n\nfunction explainMonth(m, d) {\n  const ic = d.intervaloConfianca || {};\n  const met = d.metodos || null;\n  const pes = d.pesos || null;\n  const dmp = d.damping || {};\n  const dom = dominantMethod(met, pes);\n\n  const previsaoFinal = d.previsao != null ? Number(d.previsao) : null;\n  const faixaMin = ic.lower != null ? Number(ic.lower) : null;\n  const faixaMax = ic.upper != null ? Number(ic.upper) : null;\n\n  let baseEnsemble = null;\n  if (met && pes) {\n    const hs = Number(met.heuristica || 0) * Number(pes.heuristica || 0);\n    const sx = Number(met.suavizacaoExponencial || 0) * Number(pes.suavizacaoExponencial || 0);\n    const ts = Number(met.tendenciaSazonal || 0) * Number(pes.tendenciaSazonal || 0);\n    const mm3 = Number(met.mediaMovel3 || 0) * Number(pes.mediaMovel3 || 0);\n    const b = hs + sx + ts + mm3;\n    if (Number.isFinite(b)) baseEnsemble = b;\n  }\n\n  const narrativa = [];\n  narrativa.push(`No mês ${m}, a previsão final do SKU ${row.SKU} ficou em ${previsaoFinal != null ? Math.round(previsaoFinal) : 'n/d'} peças, com faixa de ${faixaMin != null ? Math.round(faixaMin) : 'n/d'} a ${faixaMax != null ? Math.round(faixaMax) : 'n/d'}.`);\n\n  if (dom) {\n    narrativa.push(`O método com maior peso foi ${labelMetodo(dom.metodo)} (${n(dom.peso * 100, 1)}%), puxando a base para ${dom.valor != null ? Math.round(dom.valor) : 'n/d'} peças.`);\n  }\n\n  if (baseEnsemble != null) {\n    narrativa.push(`Antes dos ajustes de segurança, a base combinada estava em ${Math.round(baseEnsemble)} peças.`);\n  }\n\n  if (dmp && Object.keys(dmp).length) {\n    if (dmp.selector) narrativa.push(`A decisão aplicada foi '${dmp.selector}'.`);\n    if (dmp.regimeShift && dmp.regimeShift.direction) {\n      narrativa.push(`Houve ajuste de regime (${dmp.regimeShift.direction}) para aproximar a previsão do novo patamar recente.`);\n    }\n    if (dmp.fenceApplied && dmp.fenceInfo) {\n      narrativa.push(`Foi aplicado teto de segurança (${dmp.fenceInfo.direction}) para evitar extrapolação excessiva.`);\n    }\n    if (dmp.biasFactor != null && Number(dmp.biasFactor) !== 1) {\n      narrativa.push(`O viés multiplicativo usado foi ${n(dmp.biasFactor, 3)}.`);\n    }\n    if (dmp.wRecent != null && Number(dmp.wRecent) > 0) {\n      narrativa.push(`A média recente entrou com peso de ${n(Number(dmp.wRecent) * 100, 1)}% na calibração final.`);\n    }\n  }\n\n  return {\n    mes: m,\n    resumoNegocio: narrativa.join(' '),\n    numeros: {\n      previsaoFinal: n(previsaoFinal, 3),\n      faixaMin: n(faixaMin, 3),\n      faixaMax: n(faixaMax, 3),\n      tolerancePct: d.tolerancePct != null ? n(Number(d.tolerancePct), 1) : null,\n      confianca: d.confianca || null,\n      tipo: d.tipo || null,\n      motivo: d.motivo || null,\n      baseEnsemble: n(baseEnsemble, 3),\n      metodoDominante: dom ? {\n        metodo: dom.metodo,\n        metodoLabel: labelMetodo(dom.metodo),\n        pesoPct: n(dom.peso * 100, 1),\n        valorMetodo: dom.valor != null ? n(dom.valor, 3) : null\n      } : null\n    },\n    detalhesCalculo: {\n      metodos: met,\n      pesos: pes,\n      damping: dmp\n    }\n  };\n}\n\nconst mesesExplicados = meses.map((m) => explainMonth(m, detalhes[m] || {}));\n\nreturn [{\n  json: {\n    sku: row.SKU,\n    descricao: row['Descrição'] || '',\n    formato: row.Formato || '',\n    meses: mesesExplicados\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        0
+      ],
+      "id": "tool-explain",
+      "name": "Explain SKU Calculation"
+    },
+    {
+      "parameters": {
+        "content": "## Tool: explicação do cálculo por SKU\n\nSub-workflow para o agente responder \"como foi calculado\" para um SKU específico.\n\nEntrada:\n- sku (obrigatório): código exato ou trecho da descrição\n- mes (opcional): AAAA-MM\n\nSaída:\n- resumo de negócio por mês\n- números-chave (base, método dominante, faixa final)\n- detalhes técnicos (metodos, pesos, damping)\n\nFonte: cache Redis LIST `predict-response`.\n\nImportante: depende de o Parse Data do Predict.v2 preservar `metodos`, `pesos` e `damping` em `detalhes`.\n",
+        "height": 280,
+        "width": 480,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -40,
+        -300
+      ],
+      "typeVersion": 1,
+      "id": "tool-note"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Redis GET predict-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET predict-response": {
+      "main": [
+        [
+          {
+            "node": "Explain SKU Calculation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "instanceId": "03d32a206f2d8840fce482e6c587726f18775bd9177e9401c00ca76d3086ad41"
+  },
+  "tags": []
+}

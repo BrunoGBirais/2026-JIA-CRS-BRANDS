@@ -1,0 +1,809 @@
+{
+  "name": "CRS-Forecast-Calcular-Previsao v4 (Supabase)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "SETUP Supabase (n8n)\n\n1. Crie uma credencial \"Header Auth\" chamada \"Supabase Service Role\":\n   Name: Authorization\n   Value: Bearer <SERVICE_ROLE_KEY do Supabase>\n   (o service_role ignora RLS; mantenha-o apenas na credencial, nunca no JSON)\n\n2. Vincule essa credencial a TODOS os nós HTTP Request deste fluxo.\n\n3. O header \"apikey\" usa a chave anon (publica) apenas para o Kong.\n\nRode antes as migrations 007, 008 e 009.",
+        "height": 320,
+        "width": 460
+      },
+      "id": "Setup",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1460,
+        -620
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crs-forecast/calcular-previsao",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "chunk",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chunk"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "finalize",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "finalize"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.body && $json.body.phase) || $json.phase || '' }}",
+                    "rightValue": "get",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "get"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "0"
+        }
+      },
+      "id": "phase-switch",
+      "name": "Phase Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first() ? $input.first().json : {};\nconst body = (input && input.body) || input || {};\nreturn [{ json: {\n  user_id: body.user_id ? String(body.user_id) : null,\n  company_name: body.company_name ? String(body.company_name) : 'crs_brants',\n  nome_cenario: body.nome_cenario || ('Forecast ' + (body.ano_previsao || 2026)),\n  descricao: body.descricao || '',\n  ano_base: parseInt(body.ano_base, 10) || 2025,\n  ano_previsao: parseInt(body.ano_previsao, 10) || 2026\n} }];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/rpc/crs_forecast_agregado",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_company_name: $('Validate Input').first().json.company_name, p_ano: $('Validate Input').first().json.ano_base }) }}",
+        "options": {}
+      },
+      "id": "rpc-agregado",
+      "name": "RPC Agregado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -540,
+        -320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_HEADER_CRED",
+          "name": "Supabase Service Role (Authorization Bearer)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://longflatworm-supabase.cloudfy.live/rest/v1/rpc/crs_forecast_orcamento",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzczNjY1NzE2LCJleHAiOjE4MDUyMDE3MTZ9.nM55mAkSiyvvaIoUACEw4pY4GSJVfvrMX7b1q5JVwyg"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_company_name: $('Validate Input').first().json.company_name, p_ano: $('Validate Input').first().json.ano_previsao }) }}",
+        "options": {}
+      },
+      "id": "rpc-orcamento",
+      "name": "RPC Orcamento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -320,
+        -320
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_SUPABASE_HEADER_CRED",
+          "name": "Supabase Service Role (Authorization Bearer)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== START: monta o agregado a partir das RPCs do Supabase =====\nconst params = $('Validate Input').first().json;\nconst anoBase = Number(params.ano_base) || 2025;\nconst anoPrev = Number(params.ano_previsao) || 2026;\n\nfunction rowsOf(node){\n  try {\n    const items = $(node).all();\n    if (items.length === 1 && Array.isArray(items[0].json)) return items[0].json;\n    return items.map(i => i.json).filter(Boolean);\n  } catch (e) { return []; }\n}\nconst aggRows = rowsOf('RPC Agregado');\nconst orcRows = rowsOf('RPC Orcamento');\n\nconst norm = (s) => (s === undefined || s === null) ? '' : String(s).trim();\nconst num = (v) => { if (typeof v === 'number') return isNaN(v) ? 0 : v; if (v === undefined || v === null || v === '') return 0; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; };\n\nconst keyAgg = {};\nlet processed = 0;\nfor (const r of aggRows){\n  const item = norm(r.item), regional = norm(r.regional);\n  if (!item || !regional) continue;\n  const mes = parseInt(r.mes, 10); if (!(mes >= 1 && mes <= 12)) continue;\n  const qtd = num(r.quantidade);\n  const k = item + '||' + regional;\n  let e = keyAgg[k];\n  if (!e) { e = keyAgg[k] = { item, regional, descricao: norm(r.descricao), nome_regional: norm(r.nome_regional), meses: [0,0,0,0,0,0,0,0,0,0,0,0,0], total: 0 }; }\n  if (!e.descricao && r.descricao) e.descricao = norm(r.descricao);\n  if (!e.nome_regional && r.nome_regional) e.nome_regional = norm(r.nome_regional);\n  e.meses[mes] += qtd; e.total += qtd; processed++;\n}\n\nconst budget = {};\nfor (const r of orcRows){\n  const item = norm(r.item), regional = norm(r.regional);\n  if (!item || !regional) continue;\n  budget[item + '||' + regional] = { item, regional, descricao: norm(r.descricao), nome_regional: norm(r.nome_regional), annual: num(r.orcamento_total) };\n}\n\nconst totalRows = aggRows.length;\nconst meta = {\n  source: { origem: 'supabase', company_name: params.company_name },\n  cenario: { nome: params.nome_cenario, descricao: params.descricao, ano_base: anoBase, ano_previsao: anoPrev, base_orcamento: Object.keys(budget).length > 0 },\n  ano_base: anoBase, ano_previsao: anoPrev, budget, total_rows: totalRows\n};\nreturn [{ json: { metaStr: JSON.stringify(meta), keyAggStr: JSON.stringify(keyAgg), totalRows, processedRows: processed, rowChunkSize: 100000 } }];"
+      },
+      "id": "build-aggregate",
+      "name": "Build Aggregate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "crs-forecast-meta",
+        "value": "={{ $('Build Aggregate').first().json.metaStr }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "id": "set-meta",
+      "name": "Redis SET meta",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        120,
+        -320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "crs-forecast-keyagg",
+        "value": "={{ $('Build Aggregate').first().json.keyAggStr }}",
+        "keyType": "string",
+        "expire": true,
+        "ttl": 3600
+      },
+      "id": "set-keyagg-start",
+      "name": "Redis SET keyagg (start)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        340,
+        -320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "crs-forecast-response"
+      },
+      "id": "del-response-start",
+      "name": "Redis DEL response",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'start', totalRows: $('Build Aggregate').first().json.totalRows, rowChunkSize: $('Build Aggregate').first().json.rowChunkSize } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-start",
+      "name": "Respond Start",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        780,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "meta",
+        "key": "crs-forecast-meta",
+        "options": {}
+      },
+      "id": "get-meta-chunk",
+      "name": "Redis GET meta",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -540,
+        0
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== CHUNK (no-op): a agregacao ja e feita inteira na fase start. =====\nlet total = 0;\ntry {\n  const m = $('Redis GET meta').first().json.meta;\n  const meta = (typeof m === 'string') ? JSON.parse(m) : m;\n  total = (meta && meta.total_rows) || 0;\n} catch (e) {}\nreturn [{ json: { ok: true, processedRows: 0, nextOffset: total, hasMore: false, totalRows: total } }];"
+      },
+      "id": "process-chunk",
+      "name": "Process Chunk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'chunk', processedRows: $('Process Chunk').first().json.processedRows, nextOffset: $('Process Chunk').first().json.nextOffset, hasMore: $('Process Chunk').first().json.hasMore, totalRows: $('Process Chunk').first().json.totalRows } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-chunk",
+      "name": "Respond Chunk",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "keyagg",
+        "key": "crs-forecast-keyagg",
+        "options": {}
+      },
+      "id": "get-keyagg-final",
+      "name": "Redis GET keyagg (finalize)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "meta",
+        "key": "crs-forecast-meta",
+        "options": {}
+      },
+      "id": "get-meta-final",
+      "name": "Redis GET meta (finalize)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -540,
+        320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== FINALIZE: aplica sazonalidade + orcamento por chave e monta o envelope =====\nfunction readNode(node, prop) { try { const it = $(node).all(); return (it && it.length) ? it[0].json[prop] : null; } catch (e) { return null; } }\nconst kaRaw = readNode('Redis GET keyagg (finalize)', 'keyagg');\nconst metaRaw = readNode('Redis GET meta (finalize)', 'meta');\nlet keyAgg; try { keyAgg = (typeof kaRaw === 'string') ? JSON.parse(kaRaw || '{}') : kaRaw; } catch (e) { keyAgg = null; }\nlet meta; try { meta = (typeof metaRaw === 'string') ? JSON.parse(metaRaw) : metaRaw; } catch (e) { meta = null; }\nif (!keyAgg || typeof keyAgg !== 'object') { return [{ json: { success: false, error: 'Agregado vazio. Execute start antes de finalize.' } }]; }\nmeta = meta || { cenario: {}, source: {}, budget: {}, total_rows: 0 };\nconst budget = meta.budget || {};\nconst round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;\nconst mensal = Array.from({ length: 12 }, (_, i) => ({ mes: i + 1, previsto: 0, anterior: 0 }));\nconst regAgg = {}; const skuAgg = {};\nlet totalPrev = 0, totalAnt = 0, absErr = 0, mapeSum = 0, mapeCount = 0;\nconst keys = new Set(Object.keys(keyAgg));\nfor (const k of Object.keys(budget)) keys.add(k);\nfor (const k of keys) {\n  const e = keyAgg[k] || {};\n  const b = budget[k];\n  const parts = k.split('||');\n  const item = e.item || (b && b.item) || parts[0];\n  const regional = e.regional || (b && b.regional) || parts[1];\n  const descricao = e.descricao || (b && b.descricao) || '';\n  const nome_regional = e.nome_regional || (b && b.nome_regional) || '';\n  const meses = e.meses || [0,0,0,0,0,0,0,0,0,0,0,0,0];\n  const total = e.total || 0;\n  const bud = b ? b.annual : undefined;\n  for (let m = 1; m <= 12; m++) {\n    const anterior = meses[m] || 0;\n    const season = total > 0 ? meses[m] / total : 1 / 12;\n    const prevista = (bud !== undefined) ? bud * season : anterior;\n    const dif = prevista - anterior;\n    mensal[m - 1].previsto += prevista;\n    mensal[m - 1].anterior += anterior;\n    totalPrev += prevista; totalAnt += anterior; absErr += Math.abs(dif);\n    if (anterior > 0) { mapeSum += Math.abs(dif) / anterior; mapeCount++; }\n    if (!regAgg[regional]) regAgg[regional] = { regional, nome_regional, previsto: 0, anterior: 0, itens: {} };\n    regAgg[regional].previsto += prevista;\n    regAgg[regional].anterior += anterior;\n    regAgg[regional].itens[item] = 1;\n    if (!skuAgg[item]) skuAgg[item] = { item, descricao, total_previsto: 0, total_anterior: 0 };\n    skuAgg[item].total_previsto += prevista;\n    skuAgg[item].total_anterior += anterior;\n  }\n}\nconst wape = totalAnt > 0 ? absErr / totalAnt : null;\nconst mape = mapeCount > 0 ? mapeSum / mapeCount : null;\nconst accuracy = wape !== null ? Math.max(0, Math.min(1, 1 - wape)) : null;\nconst por_regional = Object.values(regAgg).map(r => ({ regional: r.regional, nome_regional: r.nome_regional, previsto: round2(r.previsto), anterior: round2(r.anterior), diferenca: round2(r.previsto - r.anterior), itens: Object.keys(r.itens || {}).length })).sort((a, b) => b.previsto - a.previsto);\nconst top_skus = Object.values(skuAgg).map(s => ({ item: s.item, descricao: s.descricao, total_previsto: round2(s.total_previsto), total_anterior: round2(s.total_anterior), crescimento_percentual: s.total_anterior > 0 ? round2((s.total_previsto - s.total_anterior) / s.total_anterior * 100) : 0 })).sort((a, b) => b.total_previsto - a.total_previsto);\nconst mensalOut = mensal.map(x => ({ mes: x.mes, previsto: round2(x.previsto), anterior: round2(x.anterior) }));\nconst envelope = { success: true, createdAt: new Date().toISOString(), source: meta.source || {}, cenario: meta.cenario || {}, kpis: { total_previsto: round2(totalPrev), total_anterior: round2(totalAnt), mape: mape, wape: wape, forecast_accuracy: accuracy }, mensal: mensalOut, por_regional: por_regional, top_skus: top_skus.slice(0, 50), registros_base: meta.total_rows || 0 };\nreturn [{ json: { envelopeStr: JSON.stringify(envelope), count: por_regional.length } }];"
+      },
+      "id": "build-envelope",
+      "name": "Build Envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "push",
+        "list": "crs-forecast-response",
+        "messageData": "={{ $json.envelopeStr }}"
+      },
+      "id": "push-response",
+      "name": "Redis PUSH response",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "crs-forecast-keyagg"
+      },
+      "id": "del-keyagg-final",
+      "name": "Redis DEL keyagg (final)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        120,
+        320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "crs-forecast-meta"
+      },
+      "id": "del-meta-final",
+      "name": "Redis DEL meta (final)",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        340,
+        320
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, phase: 'finalize', count: $('Build Envelope').first().json.count } }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "id": "respond-final",
+      "name": "Respond Finalize",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "response",
+        "key": "crs-forecast-response",
+        "options": {}
+      },
+      "id": "get-response",
+      "name": "Redis GET response",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        640
+      ],
+      "credentials": {
+        "redis": {
+          "id": "vZedWfLxZFTVri9g",
+          "name": "redis_cloudfy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $('Redis GET response').first().json.response;\nif (!resp || (Array.isArray(resp) && resp.length === 0)) { return [{ json: { success: false, error: 'Nenhuma previsao em cache. Recalcule.' } }]; }\nconst raw = Array.isArray(resp) ? resp[resp.length - 1] : resp;\nlet env; try { env = (typeof raw === 'string') ? JSON.parse(raw) : raw; } catch (e) { return [{ json: { success: false, error: 'Cache invalido.' } }]; }\nreturn [{ json: env }];"
+      },
+      "id": "parse-response",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-get",
+      "name": "Respond Get",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -320,
+        640
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Phase Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Phase Switch": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis GET meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis GET keyagg (finalize)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis GET response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "RPC Agregado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC Agregado": {
+      "main": [
+        [
+          {
+            "node": "RPC Orcamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC Orcamento": {
+      "main": [
+        [
+          {
+            "node": "Build Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Redis SET meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET meta": {
+      "main": [
+        [
+          {
+            "node": "Redis SET keyagg (start)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis SET keyagg (start)": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL response": {
+      "main": [
+        [
+          {
+            "node": "Respond Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET meta": {
+      "main": [
+        [
+          {
+            "node": "Process Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Chunk": {
+      "main": [
+        [
+          {
+            "node": "Respond Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET keyagg (finalize)": {
+      "main": [
+        [
+          {
+            "node": "Redis GET meta (finalize)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET meta (finalize)": {
+      "main": [
+        [
+          {
+            "node": "Build Envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Envelope": {
+      "main": [
+        [
+          {
+            "node": "Redis PUSH response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis PUSH response": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL keyagg (final)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL keyagg (final)": {
+      "main": [
+        [
+          {
+            "node": "Redis DEL meta (final)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis DEL meta (final)": {
+      "main": [
+        [
+          {
+            "node": "Respond Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET response": {
+      "main": [
+        [
+          {
+            "node": "Parse Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Get",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
